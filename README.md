@@ -45,7 +45,7 @@ the report says so in a banner. See [Demo mode](#demo-mode-what-is-real-and-what
 11. [Writing your own benchmark](#writing-your-own-benchmark) ·
 12. [Privacy and security](#privacy-and-security) · 13. [Limitations](#limitations) ·
 14. [What was deliberately not built](#what-was-deliberately-not-built) ·
-15. [Commands](#commands)
+15. [How this was built](#how-this-was-built) · 16. [Commands](#commands)
 
 ---
 
@@ -604,6 +604,24 @@ week" note in [`docs/interview-guide.md`](docs/interview-guide.md).
 (`agent-eval index`). A reviewer can `cat` a file; they cannot `cat` a database. Debugging an
 evaluation means reading a diff and a stderr log. The database earns its place only for
 cross-evaluation queries, and deleting it loses nothing.
+
+---
+
+## How this was built
+
+This tool was built with a coding agent. Here is the evidence of that process:
+
+| What | Where |
+|---|---|
+| Instructions the agent worked under | [`AGENTS.md`](AGENTS.md): the pipeline invariant, architecture rules, conventions |
+| Skills written alongside the tool | [`skills/`](skills): `create-benchmark-task`, `investigate-regression`, `review-evaluation`. They are written for whoever operates agent-eval, human or agent. They live outside `.claude/skills/` so they don't load into sessions that build agent-eval; copy them there to use them with Claude Code. |
+| One complete agent session | [`docs/transcripts/session-01.md`](docs/transcripts/session-01.md), rendered from the raw log [`session-01.jsonl`](docs/transcripts/session-01.jsonl), with the exact prompt and command |
+| What was checked by hand, and where the agent was wrong | [`docs/agent-session-notes.md`](docs/agent-session-notes.md) |
+| Agent-written bugs caught from the tool's own output | [`docs/trust-incident.md`](docs/trust-incident.md) |
+
+The commit history keeps the agent's work and the human review apart. `9c2c202` is the
+recorded session's output exactly as the agent left it. `d90f237` holds the fixes found in
+review.
 
 ---
 

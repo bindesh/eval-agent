@@ -543,7 +543,8 @@ workspace_excludes:
   - "*.o"
 ```
 
-Two guards:
+Two guards, both added in review of the session that built this
+([`docs/agent-session-notes.md`](agent-session-notes.md)):
 
 - the value must be a list of non-empty strings — a bare string used to be split into
   one-character patterns;
@@ -651,7 +652,7 @@ refuse to count it.
 `judge_high_threshold` (4.0) and `judge_low_threshold` (3.0) live in `DecisionSettings` and
 are used by **both** the manual-review flags and the report's matrix. The first version had
 different hardcoded numbers in each place and produced a report that contradicted itself.
-See `docs/trust-incident.md` §2.
+See `docs/trust-incident.md` §2 - this is the write-up the exercise asks for.
 
 ### 10. The disagreement matrix is 2×3, not 2×2
 A middle band was added between "high" and "low". Without it, every score below the high

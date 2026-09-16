@@ -1,7 +1,8 @@
 # AGENTS.md — working on agent-eval
 
-This repository is an evaluation tool for coding-agent harnesses. The code must be
-defensible line by line, because its whole purpose is to produce numbers someone will act on.
+This repository is an evaluation tool for coding-agent harnesses. It is also, awkwardly,
+built by a coding agent. Both facts matter: the code must be defensible line by line,
+because its whole purpose is to produce numbers someone will act on.
 
 ## The one idea
 

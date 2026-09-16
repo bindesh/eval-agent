@@ -2,8 +2,10 @@
 
 Two, in the order they happened. The second is the one that matters.
 
-Both bugs were in evaluator code. Neither was caught by the tests written alongside that
-code. Both were caught by reading the tool's own output and refusing to believe it.
+Both bugs were in code the coding agent wrote while building this tool. Neither was caught
+by the tests it wrote alongside that code. Both were caught by reading the tool's own
+output and refusing to believe it. The agent's mistakes in one fully recorded session are
+written up separately in [`agent-session-notes.md`](agent-session-notes.md).
 
 ---
 
@@ -34,7 +36,7 @@ time `changed_src` ran, pytest had written `src/customers/__pycache__/*.pyc` int
 workspace and mypy had written `.mypy_cache/`. `git add -A` staged them, the diff was
 non-empty, and the check passed.
 
-The bug was in the workspace code, not in the benchmark — and it was far worse than t05. The
+The bug was in the workspace code the agent had written, not in the benchmark — and it was far worse than t05. The
 same defect would have put `.pyc` files in **every agent diff**, inflated `changed_files`
 for every run, fed compiled bytecode to the LLM judge, and made an agent that did nothing
 look like it had worked.
@@ -52,9 +54,10 @@ per-benchmark ignore list; it is not built.
 
 **Update:** it is now built. `benchmark.yaml` may declare `workspace_excludes:`, a list of
 gitignore-style patterns applied on top of (never instead of) the built-in list, at every
-workspace creation site — agent runs and `doctor`. See `docs/architecture.md` §14. A
-pattern that matches a fixture file (for example `src/`) is rejected, so it cannot
-silently empty every diff — which would be this bug again in a new form.
+workspace creation site — agent runs and `doctor`. See `docs/architecture.md` §14. It was
+built in a recorded agent session. The agent's first version let a pattern like `src/`
+silently empty every diff, which is this bug again in a new form. Review caught it; see
+[`agent-session-notes.md`](agent-session-notes.md).
 
 **The lesson:** the check that validates the benchmark found a bug in the evaluator. That
 is the argument for building integrity checks before building metrics.
@@ -90,7 +93,8 @@ including the parts that are correct.
 
 ### What the investigation showed
 
-Two thresholds for the same concept, written at different times and in different files:
+Two thresholds for the same concept, both written by the agent, at different times and in
+different files:
 
 | Location | Rule | Effect |
 |---|---|---|
