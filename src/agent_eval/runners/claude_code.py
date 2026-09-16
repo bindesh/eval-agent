@@ -13,10 +13,71 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import time
+from pathlib import Path
 
 from ..redact import redact
-from .base import AgentRunner, AgentRunRequest, AgentRunResult, AgentUsage
+from .base import AgentActivity, AgentRunner, AgentRunRequest, AgentRunResult, AgentUsage
+
+# How long to wait for the output readers after the process has exited or been killed.
+# A grandchild that inherited the pipe can keep it open; a stuck display must never turn
+# into a stuck evaluation.
+_READER_GRACE_SECONDS = 10
+
+
+class _ActivityTracker:
+    """Turns stream-json events into one-line "what is the agent doing" summaries."""
+
+    def __init__(self, workspace: Path) -> None:
+        self.workspace = str(workspace).rstrip("/") + "/"
+        self.turn = 0
+        self._message_ids: set[str] = set()
+
+    def _short_path(self, value: str) -> str:
+        return value[len(self.workspace):] if value.startswith(self.workspace) else value
+
+    def _describe_tool(self, name: str, tool_input: dict) -> str:
+        for key in ("file_path", "notebook_path", "path"):
+            if isinstance(tool_input.get(key), str):
+                return f"{name} {self._short_path(tool_input[key])}"
+        if isinstance(tool_input.get("command"), str):
+            lines = tool_input["command"].strip().splitlines() or [""]
+            return f"{name} $ {lines[0].replace(self.workspace, '')[:60]}"
+        if isinstance(tool_input.get("pattern"), str):
+            return f"{name} {tool_input['pattern'][:60]}"
+        return name
+
+    def feed(self, line: str) -> AgentActivity | None:
+        try:
+            event = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(event, dict):
+            return None
+        kind = event.get("type")
+        if kind == "system" and event.get("subtype") == "init":
+            return AgentActivity(turn=0, summary="agent started")
+        if kind == "result":
+            return AgentActivity(turn=self.turn, summary="agent finished")
+        if kind != "assistant":
+            return None
+        message = event.get("message") or {}
+        message_id = message.get("id")
+        if message_id and message_id not in self._message_ids:
+            self._message_ids.add(message_id)
+            self.turn += 1
+        summary = None
+        for block in message.get("content") or []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use":
+                summary = self._describe_tool(str(block.get("name")), block.get("input") or {})
+            elif block.get("type") == "text" and summary is None:
+                summary = "writing"
+            elif block.get("type") == "thinking" and summary is None:
+                summary = "thinking"
+        return AgentActivity(turn=self.turn, summary=summary) if summary else None
 
 
 class ClaudeCodeRunner(AgentRunner):
@@ -28,10 +89,14 @@ class ClaudeCodeRunner(AgentRunner):
         self,
         *,
         executable: str = "claude",
-        output_format: str = "json",
+        output_format: str = "stream-json",
         permission_mode: str | None = "acceptEdits",
         extra_args: list[str] | None = None,
     ) -> None:
+        # stream-json rather than json: the single json payload only arrives when the agent
+        # exits, so a 90-second run showed nothing at all. The stream carries the same final
+        # `result` event (usage, cost, errors) plus every turn before it, which feeds the
+        # live progress display and leaves a full per-run transcript in stdout.log.
         # The native installer puts the launcher at ~/.local/bin/claude, so a config
         # naming it that way is the common case. subprocess does not expand `~`, and the
         # resulting failure ("executable not found") points at the wrong problem.
@@ -67,6 +132,9 @@ class ClaudeCodeRunner(AgentRunner):
         argv = [self.executable, "-p", request.prompt]
         if self.output_format:
             argv += ["--output-format", self.output_format]
+            # `claude -p` refuses stream-json without --verbose.
+            if self.output_format == "stream-json" and "--verbose" not in extra_args:
+                argv.append("--verbose")
         if request.model:
             argv += ["--model", request.model]
         if permission_mode:
@@ -95,6 +163,42 @@ class ClaudeCodeRunner(AgentRunner):
         return ""
 
     @staticmethod
+    def extract_payload(stdout: str) -> object | None:
+        """Find the final payload in either output format.
+
+        ``--output-format json`` prints one JSON document. ``stream-json`` prints one event
+        per line and ends with a ``result`` event carrying the same fields; the model name
+        only appears in the opening ``init`` event, so it is copied across. A stream with
+        no ``result`` event (killed, crashed) has no payload - it is not a run with zero
+        usage.
+        """
+        text = (stdout or "").strip()
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        result: dict | None = None
+        model: str | None = None
+        for line in text.splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            if event.get("type") == "system" and event.get("subtype") == "init":
+                model = event.get("model") or model
+            elif event.get("type") == "result":
+                result = event
+        if result is None:
+            return None
+        if model and not result.get("model"):
+            result = {**result, "model": model}
+        return result
+
+    @staticmethod
     def parse_payload(stdout: str) -> tuple[dict | None, AgentUsage, str | None, str | None]:
         """Pull usage out of `--output-format json`, degrading honestly when absent.
 
@@ -102,10 +206,7 @@ class ClaudeCodeRunner(AgentRunner):
         missing one yields ``unavailable`` rather than a zero. A zero would silently claim
         the run was free.
         """
-        try:
-            payload = json.loads(stdout)
-        except (json.JSONDecodeError, TypeError):
-            return None, AgentUsage(source="unavailable"), None, None
+        payload = ClaudeCodeRunner.extract_payload(stdout)
         if not isinstance(payload, dict):
             return None, AgentUsage(source="unavailable"), None, None
 
@@ -146,31 +247,74 @@ class ClaudeCodeRunner(AgentRunner):
 
         started = time.monotonic()
         try:
-            proc = subprocess.run(
-                argv, cwd=request.workspace, capture_output=True, text=True,
-                timeout=request.timeout_seconds, env=env,
+            proc = subprocess.Popen(
+                argv, cwd=request.workspace, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding="utf-8", errors="replace", env=env,
             )
         except FileNotFoundError as exc:
             raise RuntimeError(
                 f"agent executable not found: {self.executable!r}. Install Claude Code, or "
                 f"run with --agent simulated for the offline demo."
             ) from exc
-        except subprocess.TimeoutExpired as exc:
+
+        stdout_lines: list[str] = []
+        stderr_chunks: list[str] = []
+        tracker = _ActivityTracker(request.workspace)
+        on_activity = request.on_activity
+
+        def read_stdout() -> None:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                stdout_lines.append(line)
+                if on_activity is None:
+                    continue
+                activity = tracker.feed(line)
+                if activity is None:
+                    continue
+                try:
+                    on_activity(activity)
+                except Exception:  # noqa: BLE001
+                    # A broken progress display must never cost a paid agent run.
+                    pass
+
+        def read_stderr() -> None:
+            assert proc.stderr is not None
+            stderr_chunks.append(proc.stderr.read())
+
+        readers = [
+            threading.Thread(target=read_stdout, daemon=True),
+            threading.Thread(target=read_stderr, daemon=True),
+        ]
+        for reader in readers:
+            reader.start()
+
+        timed_out = False
+        try:
+            proc.wait(timeout=request.timeout_seconds)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            proc.kill()
+            proc.wait()
+        for reader in readers:
+            reader.join(timeout=_READER_GRACE_SECONDS)
+        stdout, stderr = "".join(stdout_lines), "".join(stderr_chunks)
+
+        if timed_out:
             return AgentRunResult(
                 adapter=self.name, adapter_version=self.version(), exit_code=None,
                 timed_out=True, duration_s=time.monotonic() - started,
-                stdout=redact(str(exc.stdout or "")), stderr=redact(str(exc.stderr or "")),
+                stdout=redact(stdout), stderr=redact(stderr),
                 usage=AgentUsage(source="unavailable"),
                 note=f"timed out after {request.timeout_seconds}s",
             )
 
-        payload, usage, model, session = self.parse_payload(proc.stdout)
+        payload, usage, model, session = self.parse_payload(stdout)
         failure = self.infrastructure_error(payload, proc.returncode)
         return AgentRunResult(
             infrastructure_error=failure,
             adapter=self.name, adapter_version=self.version(),
             exit_code=proc.returncode, duration_s=time.monotonic() - started,
-            stdout=redact(proc.stdout), stderr=redact(proc.stderr),
+            stdout=redact(stdout), stderr=redact(stderr),
             usage=usage, model_reported=model, session_id=session,
             raw=json.loads(redact(json.dumps(payload))) if payload else None,
         )

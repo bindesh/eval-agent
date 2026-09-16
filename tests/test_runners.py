@@ -23,11 +23,23 @@ def _request(tmp_path, **kwargs):
 
 # --- claude-code adapter ----------------------------------------------------
 
-def test_argv_includes_model_and_json_output(tmp_path):
+def test_argv_streams_json_with_the_verbose_flag_the_cli_requires(tmp_path):
     argv = ClaudeCodeRunner().build_argv(_request(tmp_path))
     assert argv[:3] == ["claude", "-p", "do the thing"]
-    assert "--output-format" in argv and "json" in argv
+    assert argv[argv.index("--output-format") + 1] == "stream-json"
+    assert argv.count("--verbose") == 1
     assert argv[argv.index("--model") + 1] == "m"
+
+
+def test_verbose_is_not_duplicated_when_the_harness_already_passes_it(tmp_path):
+    argv = ClaudeCodeRunner(extra_args=["--verbose"]).build_argv(_request(tmp_path))
+    assert argv.count("--verbose") == 1
+
+
+def test_plain_json_output_is_still_supported(tmp_path):
+    argv = ClaudeCodeRunner(output_format="json").build_argv(_request(tmp_path))
+    assert argv[argv.index("--output-format") + 1] == "json"
+    assert "--verbose" not in argv
 
 
 def test_argv_carries_extra_args(tmp_path):
@@ -263,3 +275,96 @@ def test_a_successful_payload_has_no_infrastructure_error():
 
 def test_unparseable_output_with_a_nonzero_exit_is_an_infrastructure_error():
     assert "exited 127" in ClaudeCodeRunner.infrastructure_error(None, 127)
+
+
+# --- streaming: live activity without changing what is measured -------------
+
+def _stream(workspace, *, result=True):
+    events = [
+        {"type": "system", "subtype": "init", "model": "claude-sonnet-5", "session_id": "s1"},
+        {"type": "assistant", "message": {"id": "m1", "content": [{"type": "thinking"}]}},
+        {"type": "assistant", "message": {"id": "m1", "content": [
+            {"type": "tool_use", "name": "Read",
+             "input": {"file_path": f"{workspace}/src/customers/service.py"}}]}},
+        {"type": "user", "message": {"content": [{"type": "tool_result", "content": "..."}]}},
+        {"type": "assistant", "message": {"id": "m2", "content": [
+            {"type": "tool_use", "name": "Bash", "input": {"command": "pytest -q\necho done"}}]}},
+    ]
+    if result:
+        events.append({
+            "type": "result", "is_error": False, "num_turns": 2, "session_id": "s1",
+            "total_cost_usd": 0.05, "usage": {"input_tokens": 10, "output_tokens": 5},
+        })
+    return "\n".join(json.dumps(e) for e in events) + "\n"
+
+
+def test_a_stream_yields_the_same_usage_as_the_single_json_payload(tmp_path):
+    payload, usage, model, session = ClaudeCodeRunner.parse_payload(_stream(tmp_path))
+    assert usage.source == "actual" and usage.cost_usd == 0.05 and usage.turns == 2
+    assert model == "claude-sonnet-5"  # only the init event names it
+    assert session == "s1"
+    assert ClaudeCodeRunner.infrastructure_error(payload, 0) == ""
+
+
+def test_a_stream_cut_off_before_its_result_has_no_usage(tmp_path):
+    """A killed run printed turns but never a result. That is not a free run."""
+    payload, usage, _, _ = ClaudeCodeRunner.parse_payload(_stream(tmp_path, result=False))
+    assert payload is None
+    assert usage.source == "unavailable"
+    assert "without returning a parseable result" in ClaudeCodeRunner.infrastructure_error(
+        payload, 1
+    )
+
+
+def _fake_claude(tmp_path, body):
+    script = tmp_path / "fake-claude"
+    script.write_text(
+        "#!/usr/bin/env python3\nimport sys, time\n"
+        "if '--version' in sys.argv:\n    print('0.0.0 (fake)')\n    sys.exit(0)\n" + body
+    )
+    script.chmod(0o755)
+    return str(script)
+
+
+def test_activity_is_reported_while_the_agent_runs(tmp_path):
+    stream = _stream(tmp_path)
+    exe = _fake_claude(tmp_path, f"sys.stdout.write({stream!r}); sys.stdout.flush()\n")
+    seen = []
+    result = ClaudeCodeRunner(executable=exe).run(
+        _request(tmp_path, on_activity=seen.append, timeout_seconds=30)
+    )
+    summaries = [(a.turn, a.summary) for a in seen]
+    assert summaries == [
+        (0, "agent started"), (1, "thinking"), (1, "Read src/customers/service.py"),
+        (2, "Bash $ pytest -q"), (2, "agent finished"),
+    ]
+    assert result.usage.cost_usd == 0.05
+    assert result.stdout == stream  # the whole stream is kept as the run's transcript
+
+
+def test_a_broken_progress_display_never_fails_the_run(tmp_path):
+    exe = _fake_claude(tmp_path, f"sys.stdout.write({_stream(tmp_path)!r})\n")
+
+    def explode(_activity):
+        raise RuntimeError("display bug")
+
+    result = ClaudeCodeRunner(executable=exe).run(
+        _request(tmp_path, on_activity=explode, timeout_seconds=30)
+    )
+    assert result.exit_code == 0 and result.usage.source == "actual"
+
+
+def test_a_timeout_keeps_the_partial_stream(tmp_path):
+    exe = _fake_claude(
+        tmp_path, "print('{\"type\": \"system\", \"subtype\": \"init\"}', flush=True)\n"
+        "time.sleep(30)\n",
+    )
+    result = ClaudeCodeRunner(executable=exe).run(_request(tmp_path, timeout_seconds=1))
+    assert result.timed_out and result.exit_code is None
+    assert '"init"' in result.stdout
+    assert result.usage.source == "unavailable"
+
+
+def test_the_progress_hook_is_not_part_of_the_serialised_request(tmp_path):
+    request = _request(tmp_path, on_activity=print)
+    assert "on_activity" not in request.model_dump()

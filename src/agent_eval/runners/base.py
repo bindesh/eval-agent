@@ -7,6 +7,7 @@ later means writing one class, not touching the pipeline.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, Protocol
 
@@ -40,6 +41,20 @@ class AgentUsage(BaseModel):
         return (self.input_tokens or 0) + (self.output_tokens or 0)
 
 
+class AgentActivity(BaseModel):
+    """One thing the agent is visibly doing right now, for a live progress display.
+
+    Display only. Nothing here is stored or scored: the evidence is the stdout log the
+    adapter returns, and progress text must never become a second, divergent record of it.
+    """
+
+    turn: int = 0
+    summary: str = ""
+
+
+ActivityCallback = Callable[[AgentActivity], None]
+
+
 class AgentRunRequest(BaseModel):
     """Everything an adapter needs. The workspace is already prepared and harnessed."""
 
@@ -54,6 +69,9 @@ class AgentRunRequest(BaseModel):
     rep: int = 1
     seed: int = 0
     config: dict = Field(default_factory=dict)
+    # Optional live-progress hook. Excluded from serialisation: it is not part of what was
+    # asked of the agent, and adapters that cannot stream simply never call it.
+    on_activity: ActivityCallback | None = Field(default=None, exclude=True, repr=False)
 
 
 class AgentRunResult(BaseModel):
