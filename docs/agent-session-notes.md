@@ -29,11 +29,11 @@ rendered without edits · raw log: [`transcripts/session-01.jsonl`](transcripts/
 
 **Size:** 93 tool calls, 25 minutes, $2.12 reported by the CLI.
 
-**Commits:** `26d8659` is the tree exactly as the agent left it. It was rebuilt by
+**Commits:** `9c2c202` is the tree exactly as the agent left it. It was rebuilt by
 replaying the agent's Edit calls from the log onto the base commit. The replay applied
 cleanly and gives the same diff as the agent's working tree: 10 files, +97/−6.
-`63153a8` holds the review fixes. Both commits were later rebased onto three unrelated
-commits made in parallel (`5668b64`…`3861b9d`). The agent's commit applied without
+`d90f237` holds the review fixes. Both commits were later rebased onto three unrelated
+commits made in parallel (`93bd53f`…`d6736a4`). The agent's commit applied without
 conflicts, so its diff is unchanged. The only conflict was in the review commit, where
 both sides appended tests to the end of `tests/test_execution_store.py`.
 
@@ -66,9 +66,9 @@ Its implementation was reasonable:
 
 | # | What was checked | How | Result |
 |---|---|---|---|
-| 1 | Did the diff do what was asked, and nothing more? | Read all of `git diff 26d8659~1 26d8659` | Matches the request. It also edited `trust-incident.md` without being asked. The edit was accurate but out of scope. |
+| 1 | Did the diff do what was asked, and nothing more? | Read all of `git diff 9c2c202~1 9c2c202` | Matches the request. It also edited `trust-incident.md` without being asked. The edit was accurate but out of scope. |
 | 2 | Does the full suite pass? | `.venv/bin/python -m pytest -p no:cacheprovider` | 156 passed |
-| 3 | Is the test count it reported right? | `pytest --collect-only` on the base commit and on `26d8659` | **151 → 156, so 5 new tests.** The agent reported "149 → 156, +7". It never counted the base commit. "149" comes from `AGENTS.md` (`pytest -q  # 149 tests, offline, ~40s`), which was out of date. |
+| 3 | Is the test count it reported right? | `pytest --collect-only` on the base commit and on `9c2c202` | **151 → 156, so 5 new tests.** The agent reported "149 → 156, +7". It never counted the base commit. "149" comes from `AGENTS.md` (`pytest -q  # 149 tests, offline, ~40s`), which was out of date. |
 | 4 | Do the tests cover the wiring, not just the helper? | Removed `extra_excludes=benchmark.workspace_excludes` from both call sites and re-ran the full suite | **156 passed.** The feature could be disconnected everywhere it is used and no test would fail. |
 | 5 | What happens with a string instead of a list? | `workspace_excludes: "target/"` in a copy of the shipped benchmark, then `load_benchmark` | **Loaded as `['t','a','r','g','e','t','/']`**: seven one-character patterns, with no error. |
 | 6 | What happens with an empty key? | `workspace_excludes:` (YAML null) | **`TypeError: 'NoneType' object is not iterable`**, not a `BenchmarkError` |
@@ -77,8 +77,8 @@ Its implementation was reasonable:
 | 9 | Is its explanation of the missing pytest summary right? | Minimal repo with `addopts = "-q"`, run `pytest -q` | **No.** The line disappears because `-q` twice means `-qq`, not because stdout isn't a TTY. |
 
 Checks 5–7 are now regression tests in the review commit. After the fixes, the full suite
-had 162 tests and all passed; after the rebase it has 176, all passing. The same mutation from check 4 now fails 3 tests.
-`ruff` and `mypy` are clean.
+had 162 tests and all passed, and 176 after the rebase. The same mutation from check 4 now
+fails 3 tests. `ruff` and `mypy` are clean.
 
 ### Where the agent was wrong
 
@@ -119,9 +119,9 @@ down what you find:
 
 - [ ] Read [`transcripts/session-01.md`](transcripts/session-01.md) end to end. Confirm
       the "no plan" and "49 calls" claims above from the transcript, not from this file.
-- [ ] Run `git diff 26d8659~1 26d8659` and form your own opinion of the agent's diff before
+- [ ] Run `git diff 9c2c202~1 9c2c202` and form your own opinion of the agent's diff before
       reading the review table.
-- [ ] Repeat check 4 (the mutation) yourself before and after `63153a8`.
+- [ ] Repeat check 4 (the mutation) yourself before and after `d90f237`.
 - [ ] Read `_refuse_excludes_that_hide_fixture_files` in `workspace.py`. Decide whether an
       error, rather than a warning, is right, and be ready to defend the choice live.
 - [ ] Run `agent-eval doctor -b benchmarks/py-customers` on your machine to confirm the

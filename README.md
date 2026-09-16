@@ -676,4 +676,5 @@ Further reading: [`docs/architecture.md`](docs/architecture.md) ·
 [`docs/decision-log.md`](docs/decision-log.md) ·
 [`docs/manual-test.md`](docs/manual-test.md) ·
 [`docs/trust-incident.md`](docs/trust-incident.md) ·
-[`docs/interview-guide.md`](docs/interview-guide.md) · [`AGENTS.md`](AGENTS.md)
+[`docs/interview-guide.md`](docs/interview-guide.md) · [`AGENTS.md`](AGENTS.md) ·
+[`docs/agent-session-notes.md`](docs/agent-session-notes.md)

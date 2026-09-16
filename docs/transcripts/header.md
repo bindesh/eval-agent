@@ -15,9 +15,9 @@ and its tool calls. Tool calls are numbered so the session notes can cite them.
 | Date | 2026-09-16T06:24:08Z (UTC) |
 | Agent | Claude Code 2.1.273, headless (`claude -p --output-format stream-json --verbose`) |
 | Model | `claude-sonnet-5` (from the session's init event) |
-| Base commit | `add2c6d`, whose tree is identical to `225a1d1`, the root commit in the published history |
-| Result commit | `26d8659`, committed exactly as the agent left the tree, then rebased cleanly onto three unrelated commits made in parallel |
-| Review fixes | `63153a8` |
+| Base commit | `add2c6d`. History was rewritten afterwards; the published root `51d46c2` differs from it only in docs: the opening paragraph of `AGENTS.md`, one line of `docs/architecture.md`, and the empty notes template |
+| Result commit | committed exactly as the agent left the tree, then rebased cleanly onto later commits made in parallel (now `9c2c202`) |
+| Review fixes | `d90f237` |
 | Harness the agent ran with | this repo's `AGENTS.md`, which the agent read with `cat` as its first action |
 | Permissions | Read, Edit, Write, Glob and Grep. Bash was allowed for `.venv/bin/{python -m pytest,pytest,ruff,mypy}`, `git status/diff/log` and `ls`; Claude Code also allows read-only commands such as `cat`, `sed` and `grep` by default. Everything else was denied (23 denials in the log), never approved. |
 
