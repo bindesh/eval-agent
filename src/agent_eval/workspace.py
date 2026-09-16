@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -133,6 +134,34 @@ class Workspace:
         return copied
 
 
+def _refuse_excludes_that_hide_fixture_files(
+    destination: Path, patterns: list[str], run: Callable[..., subprocess.CompletedProcess[str]]
+) -> None:
+    """Fail if a benchmark's own exclude pattern matches a file shipped in the fixture.
+
+    Such a pattern does not just hide build output: the file is dropped from the base
+    commit and every agent edit to it vanishes from the diff, ``changed_files`` and the
+    judge's input. ``workspace_excludes: ["src/"]`` would make every agent look like it
+    did nothing. That is the same class of silent corruption this list exists to prevent,
+    so it is an error at workspace creation (and therefore in ``doctor``), not a warning.
+    """
+    patterns_file = destination / ".git" / "agent-eval-benchmark-excludes"
+    patterns_file.write_text("".join(f"{p}\n" for p in patterns))
+    try:
+        out = run(
+            "ls-files", "--others", "--ignored", f"--exclude-from={patterns_file}"
+        ).stdout
+    finally:
+        patterns_file.unlink(missing_ok=True)
+    hidden = [line for line in out.splitlines() if line]
+    if hidden:
+        shown = ", ".join(hidden[:5]) + (f" (+{len(hidden) - 5} more)" if len(hidden) > 5 else "")
+        raise WorkspaceError(
+            f"workspace_excludes {patterns!r} match files shipped in the fixture: {shown}. "
+            "They would be missing from the base commit and from every agent diff."
+        )
+
+
 def create_workspace(
     fixture_dir: Path, destination: Path, *, extra_excludes: list[str] | None = None
 ) -> Workspace:
@@ -156,6 +185,12 @@ def create_workspace(
     run("init", "-q", "-b", "main")
     exclude = destination / ".git" / "info" / "exclude"
     exclude.parent.mkdir(parents=True, exist_ok=True)
+    if extra_excludes:
+        try:
+            _refuse_excludes_that_hide_fixture_files(destination, extra_excludes, run)
+        except WorkspaceError:
+            shutil.rmtree(destination, ignore_errors=True)
+            raise
     with exclude.open("a") as handle:
         handle.write("\n# agent-eval: tool caches, never part of a patch\n")
         handle.writelines(f"{pattern}\n" for pattern in GIT_EXCLUDES)

@@ -132,3 +132,11 @@ def test_without_extra_excludes_behaviour_is_unchanged(fixture_dir, tmp_path):
     ws = create_workspace(fixture_dir, tmp_path / "ws", extra_excludes=None)
     (ws.path / "src" / "app.py").write_text("VALUE = 2\n")
     assert ws.changed_files() == ["src/app.py"]
+
+
+def test_excludes_that_match_fixture_files_are_refused(fixture_dir, tmp_path):
+    """Found in review: `workspace_excludes: ["src/"]` dropped src/ from the base commit,
+    so an agent's edit to src/app.py produced an empty diff and changed_files == []."""
+    with pytest.raises(WorkspaceError, match="src/app.py"):
+        create_workspace(fixture_dir, tmp_path / "ws", extra_excludes=["src/"])
+    assert not (tmp_path / "ws").exists()

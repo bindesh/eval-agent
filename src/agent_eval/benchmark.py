@@ -22,6 +22,24 @@ def _read_yaml(path: Path) -> dict:
     return data
 
 
+def _read_workspace_excludes(data: dict, source: Path) -> list[str]:
+    """Validate ``workspace_excludes:``; a malformed value must fail loudly.
+
+    ``list(value)`` on a YAML string would silently turn ``"target/"`` into seven
+    one-character patterns - excluding every file named ``t``, ``a`` or ``e`` from every
+    diff while excluding ``target/`` not at all. An empty key (YAML ``null``) means none.
+    """
+    raw = data.get("workspace_excludes")
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or not all(isinstance(p, str) and p.strip() for p in raw):
+        raise BenchmarkError(
+            f"{source}: 'workspace_excludes' must be a list of non-empty pattern strings, "
+            f"got {raw!r}"
+        )
+    return [p.strip() for p in raw]
+
+
 def load_task(task_dir: Path, *, defaults: dict) -> TaskSpec:
     """Load one task directory, inheriting benchmark-level defaults."""
     data = _read_yaml(task_dir / "task.yaml")
@@ -86,6 +104,8 @@ def load_benchmark(benchmark_dir: Path) -> BenchmarkSpec:
     if not task_dirs:
         raise BenchmarkError(f"no tasks found under {tasks_root}")
 
+    workspace_excludes = _read_workspace_excludes(data, benchmark_dir / "benchmark.yaml")
+
     tasks = [load_task(d, defaults=data) for d in task_dirs]
     ids = [t.id for t in tasks]
     if len(set(ids)) != len(ids):
@@ -99,5 +119,5 @@ def load_benchmark(benchmark_dir: Path) -> BenchmarkSpec:
         directory=benchmark_dir,
         fixture_dir=fixture_dir,
         tasks=tasks,
-        workspace_excludes=list(data.get("workspace_excludes", [])),
+        workspace_excludes=workspace_excludes,
     )

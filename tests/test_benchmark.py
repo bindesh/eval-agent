@@ -56,6 +56,25 @@ def test_workspace_excludes_are_loaded_from_benchmark_yaml(mini_benchmark):
     assert spec.workspace_excludes == ["target/", "*.o"]
 
 
+def _with_excludes(root, value):
+    config_path = root / "benchmark.yaml"
+    config = yaml.safe_load(config_path.read_text())
+    config["workspace_excludes"] = value
+    config_path.write_text(yaml.safe_dump(config))
+    return root
+
+
+def test_a_string_workspace_excludes_is_an_error(mini_benchmark):
+    """Found in review: list("target/") silently became seven one-character patterns."""
+    with pytest.raises(BenchmarkError, match="workspace_excludes"):
+        load_benchmark(_with_excludes(mini_benchmark(), "target/"))
+
+
+def test_an_empty_workspace_excludes_key_means_none(mini_benchmark):
+    """Found in review: a bare `workspace_excludes:` (YAML null) raised TypeError."""
+    assert load_benchmark(_with_excludes(mini_benchmark(), None)).workspace_excludes == []
+
+
 def test_missing_fixture_is_an_error(mini_benchmark, tmp_path):
     root = mini_benchmark()
     (root / "benchmark.yaml").write_text(yaml.safe_dump({"id": "x", "fixture": "nope"}))

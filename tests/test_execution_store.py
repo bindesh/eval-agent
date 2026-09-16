@@ -212,3 +212,16 @@ def test_the_harness_model_wins_over_the_evaluation_default(tmp_path, mini_bench
     )
     assert Recorder.seen == "from-harness"
     assert record.model == "from-harness"
+
+
+def test_agent_runs_honour_benchmark_workspace_excludes(tmp_path, mini_benchmark):
+    """Found in review: removing the kwarg at the execute_run call site broke no test."""
+    benchmark, harness, store = _mini(tmp_path, mini_benchmark)
+    benchmark = benchmark.model_copy(update={"workspace_excludes": ["target/"]})
+    writes = {**SOLVED, "target/debug/app": "binary"}
+    record = execute_run(
+        benchmark=benchmark, task=benchmark.tasks[0], harness=harness,
+        item=build_plan(["t1"], 1)[0], runner=ScriptedRunner(writes), store=store, model="m",
+    )
+    assert record.changed_files == ["src/thing.py"]
+    assert "target/" not in store.read_diff(record)

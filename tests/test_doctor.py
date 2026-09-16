@@ -1,7 +1,10 @@
 """The golden check is the tool's own integrity test, so it gets tested hardest."""
 
+import pytest
+
 from agent_eval.benchmark import load_benchmark
 from agent_eval.doctor import diagnose
+from agent_eval.workspace import WorkspaceError
 
 
 def _one(root):
@@ -42,3 +45,12 @@ def test_task_without_a_reference_cannot_be_certified(mini_benchmark):
 def test_diagnose_can_be_limited_to_named_tasks(mini_benchmark):
     spec = load_benchmark(mini_benchmark())
     assert [r.task_id for r in diagnose(spec, task_ids=["t1"])] == ["t1"]
+
+
+def test_doctor_applies_benchmark_workspace_excludes(mini_benchmark):
+    """Found in review: removing the kwarg at the doctor call sites broke no test. A pattern
+    that hides fixture source must surface in doctor, which is where it would be caught."""
+    benchmark = load_benchmark(mini_benchmark())
+    benchmark = benchmark.model_copy(update={"workspace_excludes": ["src/"]})
+    with pytest.raises(WorkspaceError, match="src/thing.py"):
+        diagnose(benchmark)

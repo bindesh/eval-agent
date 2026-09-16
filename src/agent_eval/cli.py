@@ -27,6 +27,7 @@ from .metrics import Comparison
 from .pipeline import finalise
 from .runners import ClaudeCodeRunner, ReplayRunner, SimulatedRunner
 from .store import EvaluationStore, new_evaluation_id, rebuild_index
+from .workspace import WorkspaceError
 
 app = typer.Typer(
     add_completion=False,
@@ -175,7 +176,10 @@ def doctor(
         _fail(f"benchmark error: {exc}")
 
     console.print(f"Validating [bold]{spec.id}[/bold] with {sys.executable}\n")
-    results = diagnose(spec, task_ids=list(task) if task else None)
+    try:
+        results = diagnose(spec, task_ids=list(task) if task else None)
+    except WorkspaceError as exc:
+        _fail(f"benchmark error: {exc}")
 
     table = Table(header_style="bold")
     for column in ("task", "fails on pristine", "quality clean", "reference passes", "verdict"):
@@ -257,7 +261,10 @@ def evaluate(
     # possible insurance: a vacuous or unsolvable task silently dilutes every result.
     if not skip_doctor:
         console.print("[dim]Validating benchmark...[/dim]")
-        broken = [r for r in diagnose(spec, task_ids=selected) if not r.ok]
+        try:
+            broken = [r for r in diagnose(spec, task_ids=selected) if not r.ok]
+        except WorkspaceError as exc:
+            _fail(f"benchmark error: {exc}")
         if broken:
             for result in broken:
                 console.print(f"[red]{result.task_id}[/red]: {'; '.join(result.problems())}")

@@ -543,6 +543,14 @@ workspace_excludes:
   - "*.o"
 ```
 
+Two guards:
+
+- the value must be a list of non-empty strings — a bare string used to be split into
+  one-character patterns;
+- a pattern that matches a file **shipped in the fixture** is an error at workspace
+  creation, and so in `doctor`. `["src/"]` would otherwise drop the source from the base
+  commit and make every agent's diff empty.
+
 Benchmarks that don't set the key behave exactly as before — `workspace_excludes`
 defaults to `[]`. Covered by
 `tests/test_workspace.py::test_benchmark_specific_excludes_never_appear_in_the_diff` and
