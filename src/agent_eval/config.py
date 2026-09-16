@@ -68,6 +68,10 @@ class DecisionSettings(BaseModel):
     # judge's observed score distribution before trusting either.
     judge_high_threshold: float = 4.0
     judge_low_threshold: float = 3.0
+    # Below this many tasks the paired bootstrap cannot bound anything (it returns the
+    # full [-1, 1] range), so no amount of arithmetic turns the runs into a verdict.
+    # Three is the minimum at which resampling tasks produces a non-degenerate interval.
+    min_tasks_for_verdict: int = 3
     bootstrap_samples: int = 10_000
     confidence: float = 0.95
 

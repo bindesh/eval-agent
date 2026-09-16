@@ -170,15 +170,32 @@ def decide(
     breaches: list[str] = []
 
     def guard(key: str, tolerance: float, *, label: str, lower_is_better: bool) -> None:
+        """A guardrail breach needs the same evidential standard as the primary metric.
+
+        The point estimate exceeding the tolerance is necessary but not sufficient: the
+        interval must also exclude zero, or we are concluding from noise. An earlier
+        version checked only the point estimate, and returned a confident NEGATIVE from a
+        single task whose interval was the full [-1, +1] - rigorous about correctness and
+        cavalier about cost, in the same verdict.
+        """
         delta = comparison.deltas.get(key)
         if delta is None or delta.relative is None:
             return
-        breached = delta.relative > tolerance if lower_is_better else delta.relative < -tolerance
-        if breached:
-            breaches.append(
-                f"{label} moved {delta.relative*100:+.1f}%, beyond the "
-                f"{tolerance*100:.0f}% tolerance"
-            )
+        beyond = delta.relative > tolerance if lower_is_better else delta.relative < -tolerance
+        if not beyond:
+            return
+        if not delta.significant:
+            reasons.append(Reason(
+                gate="guardrail", outcome="not-evidenced",
+                detail=(f"{label} moved {delta.relative * 100:+.1f}%, beyond the "
+                        f"{tolerance * 100:.0f}% tolerance, but the interval contains zero "
+                        f"- not enough evidence to call it a breach"),
+            ))
+            return
+        breaches.append(
+            f"{label} moved {delta.relative * 100:+.1f}%, beyond the "
+            f"{tolerance * 100:.0f}% tolerance"
+        )
 
     guard("cost", settings.cost_tolerance, label="cost per task", lower_is_better=True)
     guard("duration", settings.duration_tolerance, label="wall-clock per task",
@@ -203,12 +220,41 @@ def decide(
                               detail="cost, duration, objective quality and reliability all "
                                      "stayed within tolerance"))
 
+    # ---- Gate 5: is this design capable of supporting a verdict at all? --------
+    too_small = comparison.n_tasks < settings.min_tasks_for_verdict
+    if too_small:
+        reasons.append(Reason(
+            gate="power", outcome="insufficient", severity="warning",
+            detail=(f"{comparison.n_tasks} task(s) is below the {settings.min_tasks_for_verdict} "
+                    f"needed for the paired bootstrap to bound anything - every interval here "
+                    f"is the full [-1, +1]. These runs are a smoke test, not an evaluation."),
+        ))
+
     # ---- Combine ---------------------------------------------------------------
     cost = comparison.deltas.get("cost")
     cost_improved = (
         cost is not None and cost.relative is not None
         and cost.relative < -settings.cost_tolerance
     )
+
+    # An observed regression is concrete evidence of breakage and keeps its NEGATIVE even
+    # at low n: "we watched it break" is a reason not to ship, and the conservative bias
+    # is the right one. Everything else needs a design that can actually resolve an effect.
+    if too_small and not critical and direction != "regressed":
+        return Decision(
+            verdict="INCONCLUSIVE",
+            headline=(
+                f"Too few tasks to reach a verdict. With {comparison.n_tasks} task(s) the "
+                f"paired estimator cannot bound any difference, so nothing here - including "
+                f"the cost and duration figures - is evidence about the harness. Run the "
+                f"full benchmark."
+            ),
+            reasons=reasons, manual_review_required=bool(review),
+            manual_review_reasons=review, primary_direction=direction,
+            guardrail_breaches=breaches, thresholds=settings.model_dump(),
+            resolvable_effect=resolvable_effect(comparison.n_tasks, comparison.n_reps),
+            underpowered=True,
+        )
 
     if critical or direction == "regressed":
         verdict: Verdict = "NEGATIVE"

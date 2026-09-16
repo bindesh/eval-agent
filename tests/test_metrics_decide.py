@@ -267,3 +267,64 @@ def test_an_invalid_run_cannot_pass_its_checks():
     record = invalid_run("t1", "baseline", 1)
     record.checks[0].passed = True
     assert record.correctness_passed is False
+
+
+# --- a design too small to resolve anything must not produce a verdict ------
+
+def test_a_single_task_cannot_produce_a_verdict():
+    """Regression test, from a real smoke run. One task, one repetition: the primary gate
+    correctly refused to conclude ("interval -100 to +100pp"), and then the guardrail gate
+    concluded anyway from a bare point estimate and returned NEGATIVE. Rigorous about
+    correctness and cavalier about cost, in the same verdict."""
+    base = arm("baseline", {"t1": [True]}, cost=0.16, duration=42.0)
+    cand = arm("candidate", {"t1": [True]}, cost=0.29, duration=78.0)
+    decision = decide(compare(base, cand), DIFF)
+    assert decision.verdict == "INCONCLUSIVE"
+    assert decision.underpowered
+    assert "Too few tasks" in decision.headline
+    assert any(r.gate == "power" for r in decision.reasons)
+
+
+def test_a_guardrail_breach_needs_the_interval_to_exclude_zero():
+    """The point estimate exceeding tolerance is necessary, not sufficient."""
+    base = arm("baseline", {f"t{i}": [True] for i in range(5)}, cost=0.10)
+    cand = arm("candidate", {f"t{i}": [True] for i in range(5)}, cost=0.30)
+    comparison = compare(base, cand)
+    # Force the interval to straddle zero while leaving the point estimate large.
+    comparison.deltas["cost"].ci_low, comparison.deltas["cost"].ci_high = -0.5, 0.5
+    decision = decide(comparison, DIFF)
+    assert not decision.guardrail_breaches
+    assert any(r.outcome == "not-evidenced" for r in decision.reasons)
+
+
+def test_an_evidenced_guardrail_breach_still_fires():
+    """The fix must not gut the guardrail: a consistent cost increase across tasks
+    produces an interval that excludes zero, and still breaches."""
+    base = arm("baseline", {f"t{i}": [True, True, True] for i in range(5)}, cost=0.10)
+    cand = arm("candidate", {f"t{i}": [True, True, True] for i in range(5)}, cost=0.30)
+    decision = decide(compare(base, cand), DIFF)
+    assert decision.guardrail_breaches
+    assert decision.verdict == "NEGATIVE"
+
+
+def test_an_observed_regression_still_counts_at_low_n():
+    """Watching a task break is concrete evidence, and the conservative bias is right:
+    a blocker keeps its NEGATIVE even when the design is too small for a verdict."""
+    base = arm("baseline", {"t1": [True, True, True]})
+    cand = arm("candidate", {"t1": [False, False, False]})
+    decision = decide(compare(base, cand), DIFF)
+    assert decision.verdict == "NEGATIVE"
+    assert any(r.gate == "blocker" and r.outcome == "failed" for r in decision.reasons)
+
+
+def test_the_minimum_task_count_is_configurable():
+    base = arm("baseline", {"t1": [True], "t2": [True]})
+    cand = arm("candidate", {"t1": [True], "t2": [True]})
+    comparison = compare(base, cand)
+
+    strict = decide(comparison, DIFF, DecisionSettings(min_tasks_for_verdict=5))
+    assert strict.underpowered and "Too few tasks" in strict.headline
+
+    lenient = decide(comparison, DIFF, DecisionSettings(min_tasks_for_verdict=2))
+    assert "Too few tasks" not in lenient.headline
+    assert not any(r.gate == "power" for r in lenient.reasons)
