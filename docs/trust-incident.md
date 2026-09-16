@@ -2,6 +2,9 @@
 
 Two, in the order they happened. The second is the one that matters.
 
+Both bugs were in evaluator code. Neither was caught by the tests written alongside that
+code. Both were caught by reading the tool's own output and refusing to believe it.
+
 ---
 
 ## 1. `doctor` said an untouched fixture had changed
@@ -31,7 +34,7 @@ time `changed_src` ran, pytest had written `src/customers/__pycache__/*.pyc` int
 workspace and mypy had written `.mypy_cache/`. `git add -A` staged them, the diff was
 non-empty, and the check passed.
 
-The bug was in my workspace code, not in the benchmark — and it was far worse than t05. The
+The bug was in the workspace code, not in the benchmark — and it was far worse than t05. The
 same defect would have put `.pyc` files in **every agent diff**, inflated `changed_files`
 for every run, fed compiled bytecode to the LLM judge, and made an agent that did nothing
 look like it had worked.
@@ -49,7 +52,9 @@ per-benchmark ignore list; it is not built.
 
 **Update:** it is now built. `benchmark.yaml` may declare `workspace_excludes:`, a list of
 gitignore-style patterns applied on top of (never instead of) the built-in list, at every
-workspace creation site — agent runs and `doctor`. See `docs/architecture.md` §14.
+workspace creation site — agent runs and `doctor`. See `docs/architecture.md` §14. A
+pattern that matches a fixture file (for example `src/`) is rejected, so it cannot
+silently empty every diff — which would be this bug again in a new form.
 
 **The lesson:** the check that validates the benchmark found a bug in the evaluator. That
 is the argument for building integrity checks before building metrics.
@@ -85,7 +90,7 @@ including the parts that are correct.
 
 ### What the investigation showed
 
-Two thresholds, written at different times, in different files, for the same concept:
+Two thresholds for the same concept, written at different times and in different files:
 
 | Location | Rule | Effect |
 |---|---|---|
@@ -95,8 +100,9 @@ Two thresholds, written at different times, in different files, for the same con
 Nothing was between them. A task scoring 3.67 was not flagged for review — correctly, it is
 an unremarkable score — but the matrix had nowhere to put it except the alarming cell.
 
-Underneath that was a second, more interesting error: **I had assumed a judge's absolute
-scale is calibrated.** The demo's heuristic judge has a central tendency around 3.3. Against
+Underneath that was a second, more interesting error: **the code assumed a judge's
+absolute scale is calibrated**, and nothing questioned that until the report contradicted
+itself. The demo's heuristic judge has a central tendency around 3.3. Against
 a `>= 4.0` bar, almost nothing it scores can ever be "high". The matrix was not measuring
 the patches at all — it was measuring the judge's central tendency, and reporting it as
 evidence about the agent.

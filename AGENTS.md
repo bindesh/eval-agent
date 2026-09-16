@@ -60,7 +60,10 @@ and `judge` over stored artifacts, which is the property the whole design is bui
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                                  # 149 tests, offline, ~40s
+pytest                                     # offline, ~2.5 min; pass a Bash timeout >= 300s
+# pyproject's addopts already sets -q. `pytest -q` is therefore -qq, which prints no
+# "N passed" line: a missing summary is not a hang. Count tests with --collect-only
+# rather than trusting a number written here.
 ruff check src/ tests/ && mypy src/agent_eval
 agent-eval doctor   -b benchmarks/py-customers
 agent-eval evaluate -c examples/demo.yaml

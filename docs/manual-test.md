@@ -15,7 +15,7 @@ agent-eval version                 # → agent-eval 0.1.0
 ## 2. Run the automated suite
 
 ```bash
-pytest -q                          # 149 passed, no network access
+pytest                             # 176 passed (~2.5 min), no network access
 ruff check src/ tests/             # All checks passed!
 mypy src/agent_eval                # Success: no issues found
 ```

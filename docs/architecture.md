@@ -684,7 +684,7 @@ evaluation, the other is the bottom of the evidence chain.
 ## What the final system looks like
 
 ```
-28 source files · 149 tests, all offline · ruff and mypy clean
+28 source files · 176 tests, all offline · ruff and mypy clean
 5 benchmark tasks, each with hidden verification, a rubric and a reference solution
 11 canned attempts for the offline demo
 30-run demo evaluation in ~35 seconds with no API key and no spend
