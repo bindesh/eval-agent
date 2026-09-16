@@ -170,6 +170,11 @@ class RunRecord(BaseModel):
     exit_code: int | None = None
     timed_out: bool = False
     note: str = ""
+    # An invalid run is one the agent never actually attempted (expired credentials, an
+    # API outage). It is excluded from the metrics rather than counted as a failure:
+    # counting it would turn an infrastructure problem into evidence about the harness.
+    invalid: bool = False
+    invalid_reason: str = ""
 
     base_commit: str = ""
     changed_files: list[str] = Field(default_factory=list)
@@ -194,6 +199,8 @@ class RunRecord(BaseModel):
         `all()` over an empty list is True, so the empty case is guarded: a run with no
         correctness checks is not silently counted as a success.
         """
+        if self.invalid:
+            return False
         checks = [c for c in self.checks if c.dimension == "correctness"]
         return bool(checks) and all(c.passed for c in checks)
 

@@ -76,6 +76,15 @@ def _gate_comparability(diff: HarnessDiff, comparison: Comparison) -> list[Reaso
             gate="comparability", outcome="warning", severity="warning",
             detail="the two harnesses are byte-identical; any measured difference is noise",
         ))
+    invalid = comparison.baseline.invalid_runs + comparison.candidate.invalid_runs
+    if invalid:
+        reasons.append(Reason(
+            gate="comparability", outcome="blocked", severity="critical",
+            detail=(f"{invalid} run(s) never executed - the agent reported an error "
+                    f"before attempting the task (expired credentials, an API outage, a "
+                    f"bad flag). They are excluded from the metrics rather than scored as "
+                    f"failures; fix the cause and re-run before reading anything into this."),
+        ))
     if comparison.n_tasks == 0:
         reasons.append(Reason(
             gate="comparability", outcome="blocked", severity="critical",

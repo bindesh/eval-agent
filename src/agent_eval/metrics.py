@@ -43,6 +43,7 @@ class TaskArmMetrics(BaseModel):
     cost_source: str = "unavailable"
     tamper_runs: int = 0
     timeouts: int = 0
+    invalid_runs: int = 0
     judge_score: float | None = None
     judge_criteria: dict[str, float] = Field(default_factory=dict)
     judge_low_agreement: bool = False
@@ -76,6 +77,7 @@ class ArmSummary(BaseModel):
     mean_quality_rate: float = 0.0
     mean_consistency: float = 1.0
     flaky_tasks: int = 0
+    invalid_runs: int = 0
     median_duration_s: float = 0.0
     p90_duration_s: float = 0.0
     mean_cost_per_task: float | None = None
@@ -175,6 +177,14 @@ def task_arm_metrics(task_id: str, arm: str, records: list[RunRecord]) -> TaskAr
     if not records:
         return TaskArmMetrics(task_id=task_id, arm=arm)
 
+    invalid = [r for r in records if r.invalid]
+    # Runs the agent never attempted are removed from the denominator, not scored as
+    # failures. They are counted separately and block the verdict in gate 0, so the
+    # sample never shrinks silently.
+    records = [r for r in records if not r.invalid]
+    if not records:
+        return TaskArmMetrics(task_id=task_id, arm=arm, invalid_runs=len(invalid))
+
     passes = sum(1 for r in records if r.correctness_passed)
     pass_rate = passes / len(records)
     durations = [r.duration_s for r in records]
@@ -197,6 +207,7 @@ def task_arm_metrics(task_id: str, arm: str, records: list[RunRecord]) -> TaskAr
         median_cost_usd=median(costs) if costs else None,
         median_tokens=median([float(value) for value in tokens]) if tokens else None,
         cost_source=_cost_source(records),
+        invalid_runs=len(invalid),
         tamper_runs=sum(1 for r in records if r.tamper.detected),
         timeouts=sum(1 for r in records if r.timed_out),
         judge_score=mean([s for s in judge_scores if s is not None]) if judge_scores else None,
@@ -228,6 +239,7 @@ def summarise_arm(
         mean_quality_rate=mean([t.quality_rate for t in task_metrics]),
         mean_consistency=mean([t.consistency for t in task_metrics]),
         flaky_tasks=sum(1 for t in task_metrics if t.flaky),
+        invalid_runs=sum(t.invalid_runs for t in task_metrics),
         median_duration_s=median([t.median_duration_s for t in task_metrics]),
         p90_duration_s=percentile([t.p90_duration_s for t in task_metrics], 0.9),
         mean_cost_per_task=mean(costs) if costs else None,

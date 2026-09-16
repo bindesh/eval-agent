@@ -164,6 +164,8 @@ def execute_run(
         started_at=started.isoformat(), ended_at=ended.isoformat(),
         duration_s=result.duration_s, exit_code=result.exit_code, timed_out=result.timed_out,
         note=result.note, base_commit=workspace.base_commit,
+        invalid=bool(result.infrastructure_error),
+        invalid_reason=result.infrastructure_error,
         changed_files=[f for f in changed if f not in overlaid],
         diff_stat=_diff_stat(diff),
         tamper=TamperInfo(detected=bool(tampered), paths=tampered),

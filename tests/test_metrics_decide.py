@@ -225,3 +225,45 @@ def test_every_verdict_is_fully_explained_by_its_reasons():
     decision = decide(compare(base, cand), DIFF)
     gates = {r.gate for r in decision.reasons}
     assert {"blocker", "primary", "guardrail"} <= gates
+
+
+# --- runs that never executed -----------------------------------------------
+
+def invalid_run(task, arm, rep):
+    record = run(task, arm, rep, passed=False)
+    record.invalid = True
+    record.invalid_reason = "agent reported an error: OAuth session expired"
+    return record
+
+
+def test_an_invalid_run_is_excluded_not_counted_as_a_failure():
+    """Counting a run the agent never attempted as a failure turns an expired credential
+    into evidence about harness quality."""
+    records = [run("t1", "baseline", 1), run("t1", "baseline", 2), invalid_run("t1", "baseline", 3)]
+    metrics = task_arm_metrics("t1", "baseline", records)
+    assert metrics.reps == 2, "the invalid run must leave the denominator"
+    assert metrics.pass_rate == 1.0
+    assert metrics.invalid_runs == 1
+
+
+def test_a_task_where_nothing_executed_reports_no_pass_rate():
+    metrics = task_arm_metrics("t1", "baseline", [invalid_run("t1", "baseline", i) for i in (1, 2)])
+    assert metrics.reps == 0 and metrics.invalid_runs == 2
+    assert metrics.pass_rate == 0.0
+
+
+def test_invalid_runs_block_the_verdict():
+    """The sample must never shrink silently: if runs did not execute, the tool refuses
+    to answer rather than reporting a result from whatever survived."""
+    base = arm("baseline", {"t1": [True, True, True]})
+    cand = arm("candidate", {"t1": [True, True, True]})
+    cand.invalid_runs = 2
+    decision = decide(compare(base, cand), DIFF)
+    assert decision.verdict == "NOT_COMPARABLE"
+    assert any("never executed" in r.detail for r in decision.reasons)
+
+
+def test_an_invalid_run_cannot_pass_its_checks():
+    record = invalid_run("t1", "baseline", 1)
+    record.checks[0].passed = True
+    assert record.correctness_passed is False

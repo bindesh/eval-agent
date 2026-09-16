@@ -72,6 +72,11 @@ class AgentRunResult(BaseModel):
     raw: dict | None = None
     simulated: bool = False
     note: str = ""
+    # Set when the agent never got to attempt the task - an expired login, an API
+    # outage, a bad flag. This is NOT the same as the agent trying and failing, and
+    # conflating the two is how an infrastructure problem silently becomes evidence
+    # about harness quality.
+    infrastructure_error: str = ""
 
 
 class AgentRunner(Protocol):

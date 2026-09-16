@@ -34,6 +34,9 @@ app = typer.Typer(
 )
 console = Console()
 
+# Three in a row means the environment is broken, not that the agent is bad.
+MAX_CONSECUTIVE_INVALID = 3
+
 VERDICT_STYLE = {
     "POSITIVE": "bold green", "NEGATIVE": "bold red",
     "INCONCLUSIVE": "bold yellow", "NOT_COMPARABLE": "bold white",
@@ -276,6 +279,26 @@ def evaluate(
     store.write_plan([item.as_dict() for item in plan])
 
     runner = _build_runner(config, spec.directory)
+
+    # Construct the judge now, not after the agent runs. It validates its dependencies,
+    # its credentials and its prompt version on construction - and discovering a missing
+    # package or an unset API key after thirty paid agent runs is an expensive way to
+    # learn it. Everything that can fail cheaply should fail before anything expensive
+    # starts.
+    judge_impl: Judge | None = None
+    if config.judge.enabled:
+        try:
+            judge_impl = Judge(
+                build_provider(config.judge.provider), model=config.judge.model,
+                prompt_version=config.judge.prompt_version,
+                self_consistency=config.judge.self_consistency,
+                temperature=config.judge.temperature,
+                max_patch_chars=config.judge.max_patch_chars,
+            )
+        except (RuntimeError, FileNotFoundError, ValueError) as exc:
+            _fail(f"judge is enabled but cannot be constructed: {exc}\n"
+                  f"Run with --no-judge to evaluate the objective signals only.")
+
     console.print(
         f"[bold]{config.evaluation.name}[/bold]\n"
         f"  baseline  {base_snapshot.short_id}\n"
@@ -285,6 +308,7 @@ def evaluate(
     )
 
     snapshots = {"baseline": base_snapshot, "candidate": cand_snapshot}
+    consecutive_invalid = 0
     for item in plan:
         record = execute_run(
             benchmark=spec, task=spec.task(item.task_id), harness=snapshots[item.arm],
@@ -292,7 +316,12 @@ def evaluate(
             timeout_seconds=config.agent.timeout_seconds, seed=config.evaluation.seed,
             keep_workspace=keep_workspaces,
         )
-        status = "[green]pass[/green]" if record.correctness_passed else "[red]fail[/red]"
+        if record.invalid:
+            status = "[yellow]did not run[/yellow]"
+        elif record.correctness_passed:
+            status = "[green]pass[/green]"
+        else:
+            status = "[red]fail[/red]"
         tamper = " [yellow]tamper[/yellow]" if record.tamper.detected else ""
         console.print(
             f"  [{item.order_index + 1:>2}/{len(plan)}] {item.task_id:<24} "
@@ -300,15 +329,33 @@ def evaluate(
             f"[dim]{record.duration_s:.1f}s[/dim]"
         )
 
-    if config.judge.enabled:
+        # An environment problem repeats. Burning the remaining runs to collect more
+        # copies of the same error costs money and produces nothing.
+        consecutive_invalid = consecutive_invalid + 1 if record.invalid else 0
+        if record.invalid:
+            console.print(f"      [yellow]{record.invalid_reason}[/yellow]")
+        if consecutive_invalid >= MAX_CONSECUTIVE_INVALID:
+            console.print(
+                f"\n[red]Stopping: {consecutive_invalid} runs in a row never executed.[/red]\n"
+                f"[yellow]{record.invalid_reason}[/yellow]\n"
+                f"This is an environment problem, not a result. Nothing has been scored. "
+                f"Fix it and re-run; the runs completed so far are in {store.dir}."
+            )
+            raise typer.Exit(3)
+
+    if judge_impl is not None:
         console.print("\n[dim]Judging patches (blind to arm, harness and test results)...[/dim]")
-        judge_impl = Judge(
-            build_provider(config.judge.provider), model=config.judge.model,
-            prompt_version=config.judge.prompt_version,
-            self_consistency=config.judge.self_consistency,
-            temperature=config.judge.temperature, max_patch_chars=config.judge.max_patch_chars,
-        )
-        judge_all(judge_impl, spec, store)
+        try:
+            judge_all(judge_impl, spec, store)
+        except Exception as exc:  # noqa: BLE001
+            # The judged signal is one dimension of five, and the agent runs are the
+            # expensive part. Losing the whole report - and the objective evidence in
+            # it - because an optional stage failed would be the wrong trade.
+            console.print(
+                f"[yellow]judging failed ({type(exc).__name__}: {exc}).[/yellow]\n"
+                f"[yellow]Continuing with the objective signals only; re-run judging "
+                f"later with:  agent-eval judge -c <config>[/yellow]"
+            )
 
     comparison, decision, _, json_path, html_path = finalise(
         store, config, benchmark=spec, baseline=base_snapshot, candidate=cand_snapshot

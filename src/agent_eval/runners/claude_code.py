@@ -74,6 +74,27 @@ class ClaudeCodeRunner(AgentRunner):
         return argv + [str(arg) for arg in extra_args]
 
     @staticmethod
+    def infrastructure_error(payload: dict | None, exit_code: int | None) -> str:
+        """Detect a run that never happened, as opposed to one that failed.
+
+        Observed in the wild: an expired OAuth session returns exit 1 in under a second
+        with `is_error: true`, `terminal_reason: "api_error"`, and a usage block full of
+        zeros. Treated naively that is indistinguishable from "the agent thought about it
+        and wrote nothing" - it scores as a task failure, and the zero cost gets reported
+        as a measured fact. Both are wrong, and both are worse than an error.
+        """
+        if payload is None:
+            if exit_code not in (0, None):
+                return f"agent exited {exit_code} without returning a parseable result"
+            return ""
+        if payload.get("is_error"):
+            reason = payload.get("result") or payload.get("terminal_reason") or "unknown"
+            return f"agent reported an error: {reason}"
+        if payload.get("terminal_reason") in {"api_error", "auth_error", "rate_limit"}:
+            return f"agent terminated: {payload['terminal_reason']}"
+        return ""
+
+    @staticmethod
     def parse_payload(stdout: str) -> tuple[dict | None, AgentUsage, str | None, str | None]:
         """Pull usage out of `--output-format json`, degrading honestly when absent.
 
@@ -101,7 +122,18 @@ class ClaudeCodeRunner(AgentRunner):
             "turns": payload.get("num_turns"),
         }
         known = any(v is not None for v in fields.values())
-        usage = AgentUsage(source="actual" if known else "unavailable", **fields)
+        # A run that errored out reports a full usage block of zeros. Those zeros are not
+        # a measurement of anything, so they must not be labelled "actual" - see
+        # `infrastructure_error`.
+        did_work = bool(
+            (fields["input_tokens"] or 0) or (fields["output_tokens"] or 0)
+            or (fields["cost_usd"] or 0)
+        )
+        errored = bool(payload.get("is_error"))
+        if errored and not did_work:
+            usage = AgentUsage(source="unavailable", turns=fields["turns"])
+        else:
+            usage = AgentUsage(source="actual" if known else "unavailable", **fields)
         return payload, usage, payload.get("model"), payload.get("session_id")
 
     # -- the interface ----------------------------------------------------
@@ -133,7 +165,9 @@ class ClaudeCodeRunner(AgentRunner):
             )
 
         payload, usage, model, session = self.parse_payload(proc.stdout)
+        failure = self.infrastructure_error(payload, proc.returncode)
         return AgentRunResult(
+            infrastructure_error=failure,
             adapter=self.name, adapter_version=self.version(),
             exit_code=proc.returncode, duration_s=time.monotonic() - started,
             stdout=redact(proc.stdout), stderr=redact(proc.stderr),

@@ -212,3 +212,54 @@ def test_a_tilde_in_the_executable_path_is_expanded():
     runner = ClaudeCodeRunner(executable="~/.local/bin/claude")
     assert not runner.executable.startswith("~")
     assert runner.executable.endswith("/.local/bin/claude")
+
+
+# --- a run that never happened is not a run that failed ---------------------
+
+EXPIRED_LOGIN = json.dumps({
+    "is_error": True, "terminal_reason": "api_error", "num_turns": 1,
+    "result": "Failed to authenticate: OAuth session expired and could not be refreshed",
+    "total_cost_usd": 0,
+    "usage": {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0},
+})
+
+
+def test_an_expired_login_is_reported_as_an_infrastructure_error():
+    """Observed in the wild. The CLI exits 1 in under a second with a usage block full of
+    zeros. Treated naively that is indistinguishable from 'the agent wrote nothing', which
+    scores as a task failure and turns an expired credential into evidence about the
+    harness."""
+    payload, _, _, _ = ClaudeCodeRunner.parse_payload(EXPIRED_LOGIN)
+    error = ClaudeCodeRunner.infrastructure_error(payload, 1)
+    assert "OAuth session expired" in error
+
+
+def test_zeros_from_a_failed_run_are_never_labelled_actual():
+    """The README promises a fabricated zero is never reported as measured. This is the
+    case that broke that promise: cost 0.0, source 'actual', from a run that never ran."""
+    _, usage, _, _ = ClaudeCodeRunner.parse_payload(EXPIRED_LOGIN)
+    assert usage.source == "unavailable"
+    assert usage.cost_usd is None
+    assert usage.total_tokens is None
+
+
+def test_a_genuine_zero_cost_run_is_still_actual():
+    """Only zeros accompanied by an error are suppressed - a real run that happens to
+    report no cost keeps its measurement."""
+    payload = json.dumps({
+        "total_cost_usd": 0.0, "num_turns": 3,
+        "usage": {"input_tokens": 1200, "output_tokens": 50},
+    })
+    _, usage, _, _ = ClaudeCodeRunner.parse_payload(payload)
+    assert usage.source == "actual" and usage.total_tokens == 1250
+
+
+def test_a_successful_payload_has_no_infrastructure_error():
+    payload, _, _, _ = ClaudeCodeRunner.parse_payload(
+        json.dumps({"total_cost_usd": 0.12, "usage": {"input_tokens": 100}})
+    )
+    assert ClaudeCodeRunner.infrastructure_error(payload, 0) == ""
+
+
+def test_unparseable_output_with_a_nonzero_exit_is_an_infrastructure_error():
+    assert "exited 127" in ClaudeCodeRunner.infrastructure_error(None, 127)
