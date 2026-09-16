@@ -12,6 +12,7 @@ from typing import NoReturn
 
 import typer
 from rich.console import Console
+from rich.live import Live
 from rich.table import Table
 
 from . import __version__
@@ -20,12 +21,14 @@ from .config import Config
 from .decide import Decision
 from .doctor import diagnose
 from .env import load_env
-from .execution import build_plan, execute_run
+from .execution import PlanItem, build_plan, execute_run
 from .harness import HarnessError, diff_harnesses, snapshot_harness
 from .judge import Judge, build_provider
 from .judging import judge_all
 from .metrics import Comparison
+from .models import BenchmarkSpec, RunRecord
 from .pipeline import finalise
+from .progress import StageProgress
 from .runners import ClaudeCodeRunner, ReplayRunner, SimulatedRunner
 from .store import EvaluationStore, new_evaluation_id, rebuild_index
 from .workspace import WorkspaceError
@@ -327,44 +330,41 @@ def evaluate(
 
     snapshots = {"baseline": base_snapshot, "candidate": cand_snapshot}
     consecutive_invalid = 0
-    for item in plan:
-        record = execute_run(
-            benchmark=spec, task=spec.task(item.task_id), harness=snapshots[item.arm],
-            item=item, runner=runner, store=store, model=config.agent.model,
-            timeout_seconds=config.agent.timeout_seconds, seed=config.evaluation.seed,
-            keep_workspace=keep_workspaces,
-        )
-        if record.invalid:
-            status = "[yellow]did not run[/yellow]"
-        elif record.correctness_passed:
-            status = "[green]pass[/green]"
-        else:
-            status = "[red]fail[/red]"
-        tamper = " [yellow]tamper[/yellow]" if record.tamper.detected else ""
-        console.print(
-            f"  [{item.order_index + 1:>2}/{len(plan)}] {item.task_id:<24} "
-            f"{item.arm:<10} rep{item.rep} {status}{tamper} "
-            f"[dim]{record.duration_s:.1f}s[/dim]"
-        )
-
-        # An environment problem repeats. Burning the remaining runs to collect more
-        # copies of the same error costs money and produces nothing.
-        consecutive_invalid = consecutive_invalid + 1 if record.invalid else 0
-        if record.invalid:
-            console.print(f"      [yellow]{record.invalid_reason}[/yellow]")
-        if consecutive_invalid >= MAX_CONSECUTIVE_INVALID:
-            console.print(
-                f"\n[red]Stopping: {consecutive_invalid} runs in a row never executed.[/red]\n"
-                f"[yellow]{record.invalid_reason}[/yellow]\n"
-                f"This is an environment problem, not a result. Nothing has been scored. "
-                f"Fix it and re-run; the runs completed so far are in {store.dir}."
+    progress = StageProgress(total=len(plan))
+    # Live redraws the status line in place a few times a second and prints nothing when
+    # stdout is not a terminal (CI logs, pipes), where the per-run lines below still appear.
+    live = Live(progress, console=console, refresh_per_second=4, transient=True)
+    live.start()
+    try:
+        for item in plan:
+            progress.start(
+                item.order_index + 1, f"{item.task_id} {item.arm} rep{item.rep}"
             )
-            raise typer.Exit(3)
+            record = execute_run(
+                benchmark=spec, task=spec.task(item.task_id), harness=snapshots[item.arm],
+                item=item, runner=runner, store=store, model=config.agent.model,
+                timeout_seconds=config.agent.timeout_seconds, seed=config.evaluation.seed,
+                keep_workspace=keep_workspaces,
+                on_activity=progress.activity, on_phase=progress.phase,
+            )
+            progress.finish()
+            consecutive_invalid = _report_run(record, item, len(plan), consecutive_invalid)
+            if consecutive_invalid >= MAX_CONSECUTIVE_INVALID:
+                live.stop()
+                console.print(
+                    f"\n[red]Stopping: {consecutive_invalid} runs in a row never "
+                    f"executed.[/red]\n[yellow]{record.invalid_reason}[/yellow]\n"
+                    f"This is an environment problem, not a result. Nothing has been scored. "
+                    f"Fix it and re-run; the runs completed so far are in {store.dir}."
+                )
+                raise typer.Exit(3)
+    finally:
+        live.stop()
 
     if judge_impl is not None:
         console.print("\n[dim]Judging patches (blind to arm, harness and test results)...[/dim]")
         try:
-            judge_all(judge_impl, spec, store)
+            _judge_with_progress(judge_impl, spec, store)
         except Exception as exc:  # noqa: BLE001
             # The judged signal is one dimension of five, and the agent runs are the
             # expensive part. Losing the whole report - and the objective evidence in
@@ -381,6 +381,52 @@ def evaluate(
     rebuild_index(config.evaluation.output_dir)
     _print_verdict(decision, comparison)
     console.print(f"\n  report  {html_path}\n  json    {json_path}")
+
+
+def _report_run(
+    record: RunRecord, item: PlanItem, total: int, consecutive_invalid: int
+) -> int:
+    """Print the one-line result of a finished run; return the new invalid streak."""
+    if record.invalid:
+        status = "[yellow]did not run[/yellow]"
+    elif record.correctness_passed:
+        status = "[green]pass[/green]"
+    else:
+        status = "[red]fail[/red]"
+    tamper = " [yellow]tamper[/yellow]" if record.tamper.detected else ""
+    turns = f" · {record.usage.turns} turns" if record.usage.turns else ""
+    console.print(
+        f"  [{item.order_index + 1:>2}/{total}] {item.task_id:<24} "
+        f"{item.arm:<10} rep{item.rep} {status}{tamper} "
+        f"[dim]{record.duration_s:.1f}s{turns}[/dim]"
+    )
+    # An environment problem repeats. Burning the remaining runs to collect more copies of
+    # the same error costs money and produces nothing.
+    if record.invalid:
+        console.print(f"      [yellow]{record.invalid_reason}[/yellow]")
+        return consecutive_invalid + 1
+    return 0
+
+
+def _judge_with_progress(
+    judge_impl: Judge, spec: BenchmarkSpec, store: EvaluationStore
+) -> list[RunRecord]:
+    """Judge every stored run with a live status line and one printed line per run."""
+    progress = StageProgress(total=0, noun="patch")
+
+    def started(index: int, total: int, record: RunRecord) -> None:
+        progress.total = total
+        calls = getattr(judge_impl, "self_consistency", 1)
+        progress.start(index, record.run_id, f"{calls} judge call{'s' if calls != 1 else ''}")
+
+    def finished(record: RunRecord) -> None:
+        took = progress.finish()
+        score = record.judge.score if record.judge and record.judge.score is not None else None
+        shown = f"{score:.2f}" if score is not None else "[yellow]no score[/yellow]"
+        console.print(f"  judged {record.run_id:<40} {shown} [dim]{took:.1f}s[/dim]")
+
+    with Live(progress, console=console, refresh_per_second=4, transient=True):
+        return judge_all(judge_impl, spec, store, progress=finished, on_start=started)
 
 
 @app.command(name="judge")
@@ -401,10 +447,7 @@ def judge_command(
         prompt_version=config.judge.prompt_version,
         self_consistency=config.judge.self_consistency, temperature=config.judge.temperature,
     )
-    records = judge_all(
-        judge_impl, spec, store,
-        progress=lambda r: console.print(f"  judged {r.run_id}"),
-    )
+    records = _judge_with_progress(judge_impl, spec, store)
     console.print(f"[green]judged {len(records)} runs[/green]")
     comparison, decision, _, _, html = finalise(store, config, benchmark=spec)
     _print_verdict(decision, comparison)

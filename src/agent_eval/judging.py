@@ -80,11 +80,13 @@ def judge_run(
 
 def judge_all(
     judge: Judge, benchmark: BenchmarkSpec, store: EvaluationStore,
-    records: list[RunRecord] | None = None, *, progress=None,
+    records: list[RunRecord] | None = None, *, progress=None, on_start=None,
 ) -> list[RunRecord]:
-    """Judge every stored run, in order."""
+    """Judge every stored run, in order. ``on_start``/``progress`` feed a live display."""
     records = records if records is not None else store.read_runs()
-    for record in records:
+    for index, record in enumerate(records, start=1):
+        if on_start is not None:
+            on_start(index, len(records), record)
         judge_run(judge, benchmark, store, record)
         if progress is not None:
             progress(record)

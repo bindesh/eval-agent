@@ -253,7 +253,7 @@ class AgentRunner(Protocol):
 
 | Adapter | Purpose |
 |---|---|
-| `claude-code` | `claude -p "<prompt>" --output-format json` in the workspace. Parses `total_cost_usd`, `usage`, `num_turns`, `session_id` when present. |
+| `claude-code` | `claude -p "<prompt>" --output-format stream-json --verbose` in the workspace. Parses `total_cost_usd`, `usage`, `num_turns`, `session_id` from the final `result` event (model from `init`); intermediate events drive the live status line, and the full stream is the run's `stdout.log`. |
 | `replay` | Replays a recorded cassette keyed by `(task_id, harness_id, rep)`. **Deterministic demo mode.** |
 | `scripted` | Programmable fake used by the test suite (pass/fail/timeout/tamper on demand). |
 
@@ -685,7 +685,7 @@ evaluation, the other is the bottom of the evidence chain.
 ## What the final system looks like
 
 ```
-28 source files · 176 tests, all offline · ruff and mypy clean
+30 source files · 206 tests, all offline · ruff and mypy clean
 5 benchmark tasks, each with hidden verification, a rubric and a reference solution
 11 canned attempts for the offline demo
 30-run demo evaluation in ~35 seconds with no API key and no spend

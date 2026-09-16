@@ -225,3 +225,24 @@ def test_agent_runs_honour_benchmark_workspace_excludes(tmp_path, mini_benchmark
     )
     assert record.changed_files == ["src/thing.py"]
     assert "target/" not in store.read_diff(record)
+
+
+def test_progress_hooks_see_the_phases_and_the_agent_activity(tmp_path, mini_benchmark):
+    from agent_eval.runners import AgentActivity
+
+    class Chatty(ScriptedRunner):
+        def run(self, request):
+            request.on_activity(AgentActivity(turn=1, summary="Edit src/thing.py"))
+            return super().run(request)
+
+    benchmark, harness, store = _mini(tmp_path, mini_benchmark)
+    seen = []
+    record = execute_run(
+        benchmark=benchmark, task=benchmark.tasks[0], harness=harness,
+        item=build_plan(["t1"], 1)[0], runner=Chatty(SOLVED), store=store, model="m",
+        on_activity=lambda a: seen.append(a.summary), on_phase=seen.append,
+    )
+    assert seen == [
+        "preparing workspace", "waiting for the agent", "Edit src/thing.py", "running checks",
+    ]
+    assert record.correctness_passed

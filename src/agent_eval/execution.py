@@ -11,6 +11,7 @@ import random
 import re
 import shutil
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,7 +20,7 @@ from . import __version__
 from .checks import run_checks
 from .harness import HarnessSnapshot, overlay_files
 from .models import BenchmarkSpec, DiffStat, RunRecord, TamperInfo, TaskSpec
-from .runners.base import AgentRunner, AgentRunRequest
+from .runners.base import ActivityCallback, AgentRunner, AgentRunRequest
 from .store import EvaluationStore
 from .workspace import create_workspace
 
@@ -97,8 +98,13 @@ def execute_run(
     seed: int = 0,
     keep_workspace: bool = False,
     python: str | None = None,
+    on_activity: ActivityCallback | None = None,
+    on_phase: Callable[[str], None] | None = None,
 ) -> RunRecord:
     """Run one task once under one harness, verify it, and persist the evidence.
+
+    ``on_activity`` and ``on_phase`` only feed a live display. They receive no data that
+    is not also persisted, and they are never consulted for anything that is.
 
     The ordering below is the load-bearing part:
 
@@ -112,7 +118,12 @@ def execute_run(
        existing tests cannot benefit from it;
     5. only then is ``verify/`` copied in and the checks run.
     """
+    def phase(text: str) -> None:
+        if on_phase is not None:
+            on_phase(text)
+
     run_id = f"{item.task_id}-{item.arm}-rep{item.rep:02d}"
+    phase("preparing workspace")
     workspace_root = Path(tempfile.mkdtemp(prefix=f"agent-eval-{run_id}-"))
     workspace = create_workspace(
         benchmark.fixture_dir, workspace_root / "repo",
@@ -140,8 +151,9 @@ def execute_run(
         run_id=run_id, workspace=workspace.path, prompt=task.prompt, model=effective_model,
         timeout_seconds=timeout_seconds or task.timeout_seconds,
         task_id=task.id, harness_id=harness.harness_id, arm=item.arm, rep=item.rep, seed=seed,
-        config=harness.config,
+        config=harness.config, on_activity=on_activity,
     )
+    phase("waiting for the agent")
     result = runner.run(request)
     ended = datetime.now(UTC)
 
@@ -154,6 +166,7 @@ def execute_run(
 
     # (5) hidden verification, then the objective checks
     workspace.overlay(task.verify_dir, into="verify", exclude_from_git=True)
+    phase("running checks")
     outcomes = run_checks(task.checks, workspace, python=python)
 
     record = RunRecord(

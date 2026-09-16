@@ -15,7 +15,7 @@ agent-eval version                 # → agent-eval 0.1.0
 ## 2. Run the automated suite
 
 ```bash
-pytest                             # 176 passed (~2.5 min), no network access
+pytest                             # 206 passed (~2.5 min), no network access
 ruff check src/ tests/             # All checks passed!
 mypy src/agent_eval                # Success: no issues found
 ```
@@ -156,21 +156,24 @@ agent:
   executable: /Users/you/.claude/local/claude
 ```
 
-**14b — check it speaks JSON before spending anything.** The adapter parses
-`--output-format json` for usage and cost; if your build does not support it, every run
-records `unavailable` rather than failing, but you want to know that up front:
+**14b — check it can stream JSON before spending anything.** The adapter reads
+`--output-format stream-json --verbose` for live progress, usage and cost. If your build does
+not support it, every run records `unavailable` rather than failing, but you want to know
+that up front. The last line should be a `"type":"result"` event:
 
 ```bash
-cd /tmp && claude -p "reply with the single word PONG" --output-format json | head -5
+cd /tmp && claude -p "reply with the single word PONG" --output-format stream-json --verbose | tail -1
 ```
 
 **14c — smoke-test with two runs, not thirty.**
 
 ```bash
-agent-eval evaluate --config examples/real.yaml --task t01-export-csv --runs 1
+agent-eval evaluate --config examples/real.yaml --task t01-export-csv --runs 1 --no-judge
 ```
 
-Two agent runs, a couple of minutes, a few cents. Then inspect one before committing to the
+Two agent runs, a couple of minutes, well under a dollar. The status line should move while
+the agent works (turn number and current tool); if it sits on `agent started` with no turns
+for more than a minute, stop and check the login. Then inspect one before committing to the
 full set — this is where you find out whether the agent could actually work in the prepared
 workspace:
 

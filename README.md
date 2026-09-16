@@ -493,8 +493,43 @@ agent-eval evaluate \
   --runs 3 --agent claude-code --model claude-sonnet-4-5 --judge
 ```
 
-The adapter shells out to `claude -p "<prompt>" --output-format json` with `cwd` set to the
-prepared workspace, and parses `total_cost_usd`, `usage` and `num_turns` when present.
+The adapter shells out to `claude -p "<prompt>" --output-format stream-json --verbose` with
+`cwd` set to the prepared workspace. It reads the stream line by line and parses
+`total_cost_usd`, `usage` and `num_turns` from the final `result` event. The whole stream is
+kept as the run's `stdout.log`, so every run leaves a full transcript of what the agent did.
+
+### What it costs in time, and how to iterate
+
+Almost all the time goes to the agent and the judge; the checks take about a second per run.
+Figures observed with `claude-sonnet-4-5`:
+
+| Stage | Per item | Full `examples/real.yaml` (5 tasks × 3 reps × 2 arms) |
+|---|---|---|
+| agent run | 60–90 s | 30 runs ≈ 30–45 min |
+| judge (`claude-code`, `self_consistency: 2`) | 2 calls per patch; one call took 1.5 min in testing | 30 patches — can be as long as the agent runs |
+
+So **don't use the full configuration while you're changing things.** Iterate on one task
+and one repetition (2 agent runs, a few minutes), skip judging until the objective signals
+look right, and judge afterwards from the stored patches:
+
+```bash
+agent-eval evaluate -c examples/real.yaml -t t02-fix-lookup-bug -n 1 --no-judge
+agent-eval judge    -c examples/real.yaml          # judges the latest evaluation, no agent runs
+```
+
+Run the full configuration once, for the report you intend to cite. A single-task run always
+reports `INCONCLUSIVE`; that is correct, not a bug.
+
+While it runs, a live status line shows where it is:
+
+```
+⠹ [4/30] t02-fix-lookup-bug candidate rep1 · 0:41 · turn 7 · Edit src/customers/service.py · ~28m left
+```
+
+That line is the run's position, its elapsed time, the agent's current turn and tool, and a
+rough time remaining (the mean time per run so far, so the first run shows none). Judging
+gets its own line. None of it is stored: the status line only appears in a terminal and
+disappears when the stage ends, while the one-line result per run is always printed.
 
 > **Why the CLI and not the API?** The harness under evaluation *is* the CLI's own
 > configuration surface. Driving the model through the API would mean reimplementing how
