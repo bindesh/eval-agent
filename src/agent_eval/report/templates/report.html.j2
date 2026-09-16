@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent-eval — {{ evaluation.name or evaluation.id }}</title>
+<style>
+:root{
+  --bg:#fbfaf9; --panel:#fff; --ink:#1b1917; --muted:#6b6560; --line:#e4e0dc;
+  --good:#1a7f4b; --bad:#b4302a; --warn:#9a6212; --flat:#5a6370;
+  --judged-bg:#faf6ff; --judged-line:#d9c9f0; --judged-ink:#5b3fa0;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#17161a; --panel:#1f1e23; --ink:#eceaf2; --muted:#a29daa; --line:#332f3a;
+  --good:#4ec98a; --bad:#f2837c; --warn:#e0ac53; --flat:#9aa3b2;
+  --judged-bg:#241f31; --judged-line:#493a68; --judged-ink:#c4aef5;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:1.65rem;margin:0 0 4px;letter-spacing:-.02em}
+h2{font-size:1.1rem;margin:40px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+h3{font-size:.95rem;margin:22px 0 8px}
+.sub{color:var(--muted);margin:0 0 24px;font-size:.9rem}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:12px 0}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.scroll{overflow-x:auto}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85em}
+.good{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)} .flat{color:var(--flat)}
+.muted{color:var(--muted)}
+.verdict{border-radius:12px;padding:22px 24px;margin:20px 0;border:2px solid}
+.verdict .label{font-size:2rem;font-weight:700;letter-spacing:-.02em;margin:0}
+.verdict p{margin:8px 0 0;font-size:1rem}
+.v-POSITIVE{border-color:var(--good)} .v-POSITIVE .label{color:var(--good)}
+.v-NEGATIVE{border-color:var(--bad)} .v-NEGATIVE .label{color:var(--bad)}
+.v-INCONCLUSIVE{border-color:var(--warn)} .v-INCONCLUSIVE .label{color:var(--warn)}
+.v-NOT_COMPARABLE{border-color:var(--flat)} .v-NOT_COMPARABLE .label{color:var(--flat)}
+.tag{display:inline-block;padding:1px 8px;border-radius:999px;border:1px solid var(--line);
+  font-size:.72rem;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
+.tag.obj{border-color:var(--line)}
+.tag.sub{background:var(--judged-bg);border-color:var(--judged-line);color:var(--judged-ink)}
+.judged{background:var(--judged-bg);border-color:var(--judged-line)}
+.banner{border-radius:10px;padding:14px 18px;margin:16px 0;border:2px dashed var(--warn);
+  background:color-mix(in srgb,var(--warn) 8%,transparent)}
+.banner strong{color:var(--warn)}
+ul.reasons{list-style:none;padding:0;margin:0}
+ul.reasons li{padding:8px 0;border-bottom:1px solid var(--line);font-size:.9rem}
+ul.reasons li:last-child{border-bottom:0}
+.gate{display:inline-block;min-width:104px;font-size:.72rem;text-transform:uppercase;
+  letter-spacing:.04em;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.matrix{display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.matrix>div{background:var(--panel);padding:10px 12px;font-size:.84rem}
+.matrix .hd{color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.04em}
+.matrix .alert{background:color-mix(in srgb,var(--warn) 10%,var(--panel))}
+pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+  overflow-x:auto;font-size:.8rem;margin:6px 0}
+footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--line);
+  color:var(--muted);font-size:.8rem}
+</style>
+</head>
+<body><div class="wrap">
+
+<h1>{{ evaluation.name or "Harness evaluation" }}</h1>
+<p class="sub">
+  <span class="mono">{{ evaluation.id }}</span> ·
+  benchmark <strong>{{ evaluation.benchmark }}</strong> ·
+  {{ evaluation.n_tasks }} tasks × {{ evaluation.n_reps }} repetitions =
+  {{ evaluation.n_runs }} runs · agent <span class="mono">{{ evaluation.agent_adapter }}</span>
+  {% if evaluation.model %}· model <span class="mono">{{ evaluation.model }}</span>{% endif %}
+  · generated {{ generated_at[:19] }}Z by agent-eval {{ tool_version }}
+</p>
+
+{% if evaluation.simulated %}
+<div class="banner">
+  <strong>SIMULATED AGENT — these numbers are not evidence about a real agent.</strong>
+  <p style="margin:6px 0 0">
+    Which attempt each run produced, and every duration, token and cost figure, were
+    declared by the benchmark rather than measured. The workspaces, the patches and every
+    objective check (pytest, ruff, mypy) are real and really ran. This mode exists so a
+    reviewer can exercise the whole pipeline with no API key and no spend.
+  </p>
+</div>
+{% endif %}
+
+<!-- ================= 1. VERDICT ================= -->
+<h2>1 · Executive conclusion</h2>
+<div class="verdict v-{{ verdict.verdict }}">
+  <p class="label">{{ verdict.verdict }}</p>
+  <p>{{ verdict.headline }}</p>
+</div>
+
+{% if verdict.manual_review_required %}
+<div class="banner">
+  <strong>MANUAL REVIEW REQUIRED</strong>
+  <p style="margin:6px 0 0">
+    {{ verdict.manual_review_reasons|length }} finding(s) below need a human before this
+    verdict is acted on. Automation is not perfect and this report does not pretend it is.
+  </p>
+</div>
+{% endif %}
+
+<h3>How this verdict was reached</h3>
+<div class="panel">
+<ul class="reasons">
+{% for reason in verdict.reasons %}
+  <li>
+    <span class="gate">{{ reason.gate }}</span>
+    <span class="{% if reason.severity == 'critical' %}bad{% elif reason.severity == 'warning' %}warn{% else %}muted{% endif %}">
+      [{{ reason.outcome }}]</span>
+    {{ reason.detail }}
+  </li>
+{% endfor %}
+</ul>
+</div>
+<p class="muted" style="font-size:.85rem">
+  There is no weighted composite score anywhere in this tool. The verdict comes from
+  ordered gates — one pre-declared primary metric (functional correctness) plus
+  guardrails — so that the value judgements are named, configurable tolerances you can
+  disagree with, and so a regression on one critical task can veto an average improvement.
+  Thresholds used: min_effect {{ verdict.thresholds.min_effect }},
+  cost {{ verdict.thresholds.cost_tolerance }}, duration {{ verdict.thresholds.duration_tolerance }},
+  reliability {{ verdict.thresholds.reliability_tolerance }},
+  quality {{ verdict.thresholds.quality_tolerance }}.
+</p>
+
+<!-- ================= 2. HARNESS ================= -->
+<h2>2 · What changed in the harness</h2>
+<div class="grid">
+  <div class="panel">
+    <strong>Baseline</strong><br>
+    <span class="mono">{{ harnesses.baseline.short_id }}</span><br>
+    <span class="muted">{{ harnesses.baseline.name }} · {{ harnesses.baseline.files }} files
+    {% if harnesses.baseline.git_commit %}· git {{ harnesses.baseline.git_commit[:8] }}
+      {% if harnesses.baseline.git_dirty %}<span class="warn">(dirty)</span>{% endif %}{% endif %}</span>
+  </div>
+  <div class="panel">
+    <strong>Candidate</strong><br>
+    <span class="mono">{{ harnesses.candidate.short_id }}</span><br>
+    <span class="muted">{{ harnesses.candidate.name }} · {{ harnesses.candidate.files }} files
+    {% if harnesses.candidate.git_commit %}· git {{ harnesses.candidate.git_commit[:8] }}
+      {% if harnesses.candidate.git_dirty %}<span class="warn">(dirty)</span>{% endif %}{% endif %}</span>
+  </div>
+</div>
+
+<table>
+  <tr><th>Change</th><th>Path</th></tr>
+  {% for change in harness_diff.files %}
+  <tr>
+    <td class="{% if change.change=='added' %}good{% elif change.change=='removed' %}bad{% else %}warn{% endif %}">
+      {{ change.change|upper }}</td>
+    <td class="mono">{{ change.path }}</td>
+  </tr>
+  {% endfor %}
+  <tr><td class="{% if harness_diff.model_changed %}bad{% else %}muted{% endif %}">MODEL</td>
+      <td>{% if harness_diff.model_changed %}CHANGED — comparison is confounded{% else %}unchanged
+      ({{ harnesses.baseline.model or "not specified" }}){% endif %}</td></tr>
+  <tr><td class="muted">AGENT</td>
+      <td>{% if harness_diff.agent_changed %}CHANGED{% else %}unchanged
+      ({{ harnesses.baseline.agent }}){% endif %}</td></tr>
+  {% for change in harness_diff.config %}
+  <tr><td class="warn">CONFIG</td>
+      <td class="mono">{{ change.key }}: {{ change.before }} → {{ change.after }}</td></tr>
+  {% endfor %}
+</table>
+
+{% for change in harness_diff.files if change.diff %}
+<h3 class="mono">{{ change.path }}</h3>
+<pre>{{ change.diff }}</pre>
+{% endfor %}
+
+<!-- ================= 3. METRICS ================= -->
+<h2>3 · Metrics</h2>
+<p class="muted" style="font-size:.85rem">
+  <span class="tag obj">measured</span> comes from an exit code or a clock.
+  <span class="tag sub">judged</span> comes from a language model scoring a rubric and is
+  an opinion with evidence attached, not a fact. They are never added together.
+  Intervals are 95% percentile bootstrap over <strong>tasks</strong> — the unit of analysis
+  is the task, not the run, because repetitions of one task are not independent samples.
+</p>
+
+<div class="scroll">
+<table>
+  <tr>
+    <th>Metric</th><th></th>
+    <th class="num">Baseline</th><th class="num">Candidate</th>
+    <th class="num">Δ (paired)</th><th class="num">Δ relative</th><th>95% CI</th>
+  </tr>
+  {% for key, d in deltas.items() %}
+  <tr {% if not d.objective %}class="judged"{% endif %}>
+    <td>{{ d.label }}</td>
+    <td><span class="tag {% if d.objective %}obj">measured{% else %}sub">judged{% endif %}</span></td>
+    <td class="num">
+      {% if d.metric in ['correctness','quality','reliability'] %}{{ d.baseline|pct }}
+      {% elif d.metric == 'cost' %}{{ d.baseline|usd }}
+      {% elif d.metric == 'duration' %}{{ d.baseline|secs }}
+      {% else %}{{ d.baseline|signed }}{% endif %}
+    </td>
+    <td class="num">
+      {% if d.metric in ['correctness','quality','reliability'] %}{{ d.candidate|pct }}
+      {% elif d.metric == 'cost' %}{{ d.candidate|usd }}
+      {% elif d.metric == 'duration' %}{{ d.candidate|secs }}
+      {% else %}{{ d.candidate|signed }}{% endif %}
+    </td>
+    <td class="num {% if d.absolute is none %}muted{% elif d.improved %}good{% elif d.absolute == 0 %}flat{% else %}bad{% endif %}">
+      {% if d.metric in ['correctness','quality','reliability'] %}{{ d.absolute|pp }}
+      {% elif d.metric == 'cost' %}{{ d.absolute|usd }}
+      {% elif d.metric == 'duration' %}{{ d.absolute|secs }}
+      {% else %}{{ d.absolute|signed }}{% endif %}
+    </td>
+    <td class="num muted">{{ d.relative|relpct }}</td>
+    <td class="mono muted">
+      {% if d.ci_low is not none %}
+        [{{ d.ci_low|round(3) }}, {{ d.ci_high|round(3) }}]
+        {% if d.significant %}<span class="good">✓ excludes 0</span>
+        {% else %}<span class="flat">contains 0</span>{% endif %}
+      {% else %}n/a{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <strong>Pooled pass rate — baseline</strong><br>
+    {{ arms.baseline.pooled_passes }}/{{ arms.baseline.pooled_runs }} runs =
+    {{ arms.baseline.pooled_pass_rate|pct }}<br>
+    <span class="muted">Wilson 95% CI [{{ arms.baseline.pooled_ci_low|round(3) }},
+      {{ arms.baseline.pooled_ci_high|round(3) }}] — descriptive only, not the basis of the
+      verdict (it ignores the clustering).</span>
+  </div>
+  <div class="panel">
+    <strong>Pooled pass rate — candidate</strong><br>
+    {{ arms.candidate.pooled_passes }}/{{ arms.candidate.pooled_runs }} runs =
+    {{ arms.candidate.pooled_pass_rate|pct }}<br>
+    <span class="muted">Wilson 95% CI [{{ arms.candidate.pooled_ci_low|round(3) }},
+      {{ arms.candidate.pooled_ci_high|round(3) }}]</span>
+  </div>
+  <div class="panel">
+    <strong>Resolving power</strong><br>
+    {% if power.resolvable_effect is not none %}
+      ≈ {{ (power.resolvable_effect * 100)|round(0)|int }} percentage points
+    {% else %}nothing short of every task flipping{% endif %}<br>
+    <span class="muted">{{ power.n_tasks }} tasks × {{ power.n_reps }} reps. Smaller real
+      effects cannot be seen by this experiment.</span>
+  </div>
+  <div class="panel">
+    <strong>Reliability</strong><br>
+    baseline {{ arms.baseline.flaky_tasks }} flaky ·
+    candidate {{ arms.candidate.flaky_tasks }} flaky<br>
+    <span class="muted">A flaky task is one that passed some repetitions and failed others.</span>
+  </div>
+</div>
+
+<!-- ================= 4. PER TASK ================= -->
+<h2>4 · Per-task results</h2>
+<div class="scroll">
+<table>
+  <tr>
+    <th>Task</th><th class="num">Baseline</th><th class="num">Candidate</th>
+    <th class="num">Δ</th><th>Outcome</th>
+    <th class="num">Δ cost</th><th class="num">Δ time</th>
+    {% if evaluation.judge_enabled %}<th class="num">Judge</th>{% endif %}
+    <th>Flags</th>
+  </tr>
+  {% for task in tasks %}
+  <tr>
+    <td><span class="mono">{{ task.task_id }}</span><br>
+        <span class="muted">{{ task.title }}</span></td>
+    <td class="num">{{ task.baseline.passes }}/{{ task.baseline.reps }}</td>
+    <td class="num">{{ task.candidate.passes }}/{{ task.candidate.reps }}</td>
+    <td class="num {% if task.correctness_delta > 0 %}good{% elif task.correctness_delta < 0 %}bad{% else %}flat{% endif %}">
+      {{ task.correctness_delta|pp }}</td>
+    <td class="{% if task.classification=='regressed' %}bad{% elif task.classification=='improved' %}good{% else %}muted{% endif %}">
+      {{ task.classification.replace('_',' ') }}</td>
+    <td class="num muted">{{ task.cost_delta|usd }}</td>
+    <td class="num muted">{{ task.duration_delta|secs }}</td>
+    {% if evaluation.judge_enabled %}
+    <td class="num">
+      {% if task.candidate.judge_score is not none %}
+        {{ task.candidate.judge_score|round(1) }}<span class="muted">/5</span>
+        {% if task.judge_delta is not none %}<br>
+        <span class="muted">{{ task.judge_delta|signed }}</span>{% endif %}
+      {% else %}<span class="muted">n/a</span>{% endif %}
+    </td>
+    {% endif %}
+    <td>{% for flag in task.flags %}<span class="tag">{{ flag }}</span> {% endfor %}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+
+<!-- ================= 5. REGRESSIONS / IMPROVEMENTS ================= -->
+<h2>5 · Regressions and improvements</h2>
+{% if regressions %}
+<h3 class="bad">Regressions</h3>
+<div class="panel">
+{% for finding in regressions %}
+  <p style="margin:6px 0"><span class="tag">{{ finding.kind }}</span>
+    <span class="{% if finding.severity=='critical' %}bad{% else %}warn{% endif %}">
+    {{ finding.severity }}</span> — {{ finding.message }}<br>
+    <span class="muted mono" style="font-size:.78rem">{{ finding.evidence|join(' · ') }}</span></p>
+{% endfor %}
+</div>
+{% else %}
+<p class="muted">No task went from passing under baseline to failing under candidate.</p>
+{% endif %}
+
+{% if improvements %}
+<h3 class="good">Improvements</h3>
+<div class="panel">
+{% for finding in improvements %}
+  <p style="margin:6px 0">{{ finding.message }}<br>
+    <span class="muted mono" style="font-size:.78rem">{{ finding.evidence|join(' · ') }}</span></p>
+{% endfor %}
+</div>
+{% endif %}
+
+<!-- ================= 6. DISAGREEMENT ================= -->
+{% if disagreement_matrix.available %}
+<h2>6 · Where the measured and judged signals disagree</h2>
+<p class="muted" style="font-size:.85rem">
+  The diagonal is agreement. The off-diagonal cells are the most useful output in this
+  report: in each of them either the agent, the benchmark, or the judge is wrong, and only
+  a human can say which. They are also the reason the judge is never shown test results —
+  a judge that knew the tests passed would agree with them by construction, and this table
+  would always be diagonal.
+</p>
+<div class="matrix">
+  <div class="hd"></div>
+  <div class="hd">judge &ge; {{ disagreement_matrix.thresholds.high }}</div>
+  <div class="hd">between</div>
+  <div class="hd">judge &le; {{ disagreement_matrix.thresholds.low }}</div>
+
+  <div class="hd">tests pass</div>
+  <div>{{ disagreement_matrix.cells.pass_high|join(', ') or '—' }}<br>
+    <span class="muted" style="font-size:.78rem">{{ disagreement_matrix.legend.pass_high }}</span></div>
+  <div>{{ disagreement_matrix.cells.pass_mid|join(', ') or '—' }}<br>
+    <span class="muted" style="font-size:.78rem">{{ disagreement_matrix.legend.pass_mid }}</span></div>
+  <div class="{% if disagreement_matrix.cells.pass_low %}alert{% endif %}">
+    {{ disagreement_matrix.cells.pass_low|join(', ') or '—' }}<br>
+    <span class="muted" style="font-size:.78rem">{{ disagreement_matrix.legend.pass_low }}</span></div>
+
+  <div class="hd">tests fail</div>
+  <div class="{% if disagreement_matrix.cells.fail_high %}alert{% endif %}">
+    {{ disagreement_matrix.cells.fail_high|join(', ') or '—' }}<br>
+    <span class="muted" style="font-size:.78rem">{{ disagreement_matrix.legend.fail_high }}</span></div>
+  <div>{{ disagreement_matrix.cells.fail_mid|join(', ') or '—' }}<br>
+    <span class="muted" style="font-size:.78rem">{{ disagreement_matrix.legend.fail_mid }}</span></div>
+  <div>{{ disagreement_matrix.cells.fail_low|join(', ') or '—' }}<br>
+    <span class="muted" style="font-size:.78rem">{{ disagreement_matrix.legend.fail_low }}</span></div>
+</div>
+<p class="muted" style="font-size:.82rem">
+  Both thresholds come from <code>decision.judge_high_threshold</code> and
+  <code>decision.judge_low_threshold</code>, and the manual-review queue below uses the
+  same two numbers. Calibrate them against your judge's observed score distribution:
+  a judge whose scores cluster at 3 will put every task in the left or middle column
+  regardless of how good the patches are.
+</p>
+{% endif %}
+
+<!-- ================= 7. MANUAL REVIEW ================= -->
+<h2>7 · Manual review queue</h2>
+{% if manual_review %}
+<div class="panel">
+{% for finding in manual_review %}
+  <p style="margin:8px 0"><span class="tag">{{ finding.kind }}</span>
+    <span class="mono">{{ finding.task_id }}</span> — {{ finding.message }}<br>
+    <span class="muted mono" style="font-size:.78rem">{{ finding.evidence|join(' · ') }}</span></p>
+{% endfor %}
+</div>
+{% else %}
+<p class="muted">Nothing flagged. No tampering, no judge self-disagreement, and the
+  measured and judged signals did not contradict each other on any task.</p>
+{% endif %}
+
+<!-- ================= 8. RUNS ================= -->
+<h2>8 · Every run</h2>
+<p class="muted" style="font-size:.85rem">
+  Execution order is recorded because it is part of the experiment design: runs are
+  interleaved so that drift in API latency or machine load hits both arms equally.
+  Every path below is relative to this report.
+</p>
+<div class="scroll">
+<table>
+  <tr><th class="num">#</th><th>Run</th><th>Checks</th><th class="num">Time</th>
+      <th class="num">Cost</th><th>Source</th><th>Evidence</th></tr>
+  {% for run in runs %}
+  <tr>
+    <td class="num muted">{{ run.order_index }}</td>
+    <td class="mono">{{ run.run_id }}</td>
+    <td>{% for cid, summary in run.checks.items() %}<span
+      class="{% if summary=='PASS' %}good{% else %}bad{% endif %}">{{ cid }}:{{ summary }}</span>
+      {% endfor %}{% if run.tamper %}<span class="tag">tamper</span>{% endif %}</td>
+    <td class="num muted">{{ run.duration_s|secs }}</td>
+    <td class="num muted">{{ run.cost_usd|usd }}</td>
+    <td class="muted">{{ run.cost_source }}</td>
+    <td class="mono muted" style="font-size:.78rem">{{ run.artifacts }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+
+<!-- ================= 9. LIMITATIONS ================= -->
+<h2>9 · Limitations</h2>
+<div class="panel">
+<ol style="margin:0;padding-left:20px">
+{% for item in limitations %}<li style="margin:6px 0">{{ item }}</li>{% endfor %}
+</ol>
+</div>
+
+<h2>10 · Reproducing this</h2>
+<div class="panel mono" style="font-size:.82rem">
+  tool {{ tool_version }} · python {{ environment.python }} ·
+  {{ environment.platform }}<br>
+  order {{ evaluation.order }} · seed {{ evaluation.seed }} ·
+  baseline {{ harnesses.baseline.short_id }} · candidate {{ harnesses.candidate.short_id }}<br>
+  raw artifacts: <code>runs/{{ evaluation.id }}/</code> ·
+  machine-readable: <code>report.json</code>
+</div>
+
+<footer>
+  Generated by agent-eval {{ tool_version }}. Every number here is reproducible from the
+  artifacts in this evaluation directory; nothing in this report is computed anywhere else.
+</footer>
+</div></body></html>

@@ -1,0 +1,15 @@
+id: t04-paginate-list
+title: Paginate the customer list
+property: change an API without breaking existing callers
+prompt: |
+  The admin UI times out on accounts with tens of thousands of customers because
+  list_customers() returns everything.
+
+  Add pagination to CustomerService.list_customers so a caller can ask for a page
+  of results: a limit on how many customers come back, and an offset to skip
+  earlier ones. Pagination must work together with the existing status and search
+  filters.
+
+  Several services already call list_customers() and we are not changing them in
+  this release.
+rubric: rubric.md

@@ -1,0 +1,13 @@
+id: t01-export-csv
+title: Add CSV export for customers
+property: implement a missing feature
+prompt: |
+  The support team needs to hand customer lists to finance as CSV.
+
+  Add a way to export customers as a CSV string from CustomerService. The CSV
+  must have the header row `id,name,email,status` followed by one row per
+  customer, in the same order list_customers() returns them. It should accept
+  the same status/search filters that list_customers() accepts.
+
+  Name the method export_csv.
+rubric: rubric.md

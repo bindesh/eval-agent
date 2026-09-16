@@ -1,0 +1,15 @@
+id: t03-validate-import
+title: Validate imported customer rows
+property: multi-part requirement — behaviour plus tests
+prompt: |
+  CustomerService.import_customers takes rows straight from an uploaded file and
+  stores them without checking anything, so garbage rows end up in the database
+  and a missing column raises a raw KeyError.
+
+  Add validation to import_customers. Every row needs a non-empty id and name, an
+  email address, and a status that is one of the statuses this package allows
+  (default to active when the column is absent). When a row is invalid the caller
+  must be able to tell which field was wrong.
+
+  Add tests covering the validation you add.
+rubric: rubric.md

@@ -1,0 +1,28 @@
+id: py-customers
+title: Customer records service (Python)
+description: >
+  A small customer-records service with discoverable conventions: application
+  errors derive from AppError, input validation goes through validation.py
+  helpers, public API changes stay backwards compatible, tests use factories.
+fixture: fixture
+language: python
+# Checks every task inherits unless it overrides them.
+default_checks:
+  - id: tests
+    type: pytest
+    args: ["-q", "verify/"]
+    dimension: correctness
+  - id: lint
+    type: command
+    # src/ and tests/ only: the injected verify/ suite is ours, not the agent's work.
+    cmd: ["{python}", "-m", "ruff", "check", "src/", "tests/"]
+    dimension: quality
+  - id: types
+    type: command
+    cmd: ["{python}", "-m", "mypy", "src/"]
+    dimension: quality
+default_protected_paths:
+  - "tests/**"
+  - "pyproject.toml"
+  - "verify/**"
+default_timeout_seconds: 600

@@ -1,0 +1,12 @@
+id: t02-fix-lookup-bug
+title: Fix the silent miss in customer lookup
+property: fix a bug while following existing conventions
+prompt: |
+  Support reported a bug. When a caller looks up a customer id that does not
+  exist, CustomerService.get_customer returns nothing instead of failing, so the
+  caller blows up later with an AttributeError on None and we get a 500 with no
+  useful message.
+
+  Fix it so callers get a clear failure when the customer does not exist.
+  Keep the behaviour for ids that do exist unchanged.
+rubric: rubric.md

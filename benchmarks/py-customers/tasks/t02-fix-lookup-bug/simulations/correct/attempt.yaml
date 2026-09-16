@@ -1,0 +1,17 @@
+id: correct
+description: Delegates to repository.get(), which already raises NotFoundError.
+weights:
+  baseline: 0.35
+  candidate: 0.8
+duration_s:
+  baseline: 64
+  candidate: 96
+usage:
+  input_tokens: 38000
+  output_tokens: 1400
+  cost_usd: 0.11
+  turns: 5
+use_reference: true
+usage_scale:
+  baseline: 1.0
+  candidate: 1.45

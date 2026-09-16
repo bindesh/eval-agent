@@ -1,0 +1,39 @@
+# Offline demo evaluation.
+#
+#   agent-eval evaluate --config examples/demo.yaml
+#
+# Runs with no API key and no spend. The workspaces, the patches and every objective
+# check are real; which attempt each run produces, and the duration/token/cost figures,
+# are declared by the benchmark. The report says so in a banner on every page.
+#
+# To run this for real, see README "Running against a real agent":
+#   agent-eval evaluate --config examples/real.yaml
+
+evaluation:
+  name: "Add repo conventions to AGENTS.md + a repo-conventions skill"
+  benchmark: ../benchmarks/py-customers
+  baseline: ../harnesses/baseline
+  candidate: ../harnesses/candidate
+  runs: 3
+  order: interleaved       # baseline and candidate back-to-back, so drift hits both arms
+  seed: 20260915
+  output_dir: ../runs
+
+agent:
+  adapter: simulated
+  model: claude-sonnet-4-5
+
+judge:
+  enabled: true
+  provider: heuristic      # rule-based, NOT a language model - see README
+  model: heuristic-demo-1
+  prompt_version: v1
+  self_consistency: 2
+
+decision:
+  min_effect: 0.20         # a paired correctness change below 20pp is not actionable here
+  cost_tolerance: 0.15
+  duration_tolerance: 0.25
+  reliability_tolerance: 0.15
+  quality_tolerance: 0.15
+  bootstrap_samples: 10000

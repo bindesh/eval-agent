@@ -1,0 +1,16 @@
+id: value-error
+description: Raises a builtin ValueError instead of the project's NotFoundError.
+weights:
+  baseline: 0.65
+  candidate: 0.2
+duration_s:
+  baseline: 58
+  candidate: 88
+usage:
+  input_tokens: 38000
+  output_tokens: 1400
+  cost_usd: 0.11
+  turns: 5
+usage_scale:
+  baseline: 1.0
+  candidate: 1.45

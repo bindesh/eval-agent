@@ -1,0 +1,10 @@
+name: candidate
+description: >
+  Adds a conventions section to AGENTS.md and a repo-conventions skill. Model,
+  agent and MCP configuration are deliberately identical to baseline so that any
+  measured difference is attributable to the instructions alone.
+agent: claude-code
+model: claude-sonnet-4-5
+permission_mode: acceptEdits
+mcp_servers: []
+extra_args: []

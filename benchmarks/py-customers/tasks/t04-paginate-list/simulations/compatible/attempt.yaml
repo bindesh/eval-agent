@@ -1,0 +1,17 @@
+id: compatible
+description: Adds keyword-only limit/offset with None meaning no limit.
+weights:
+  baseline: 0.55
+  candidate: 0.6
+duration_s:
+  baseline: 96
+  candidate: 131
+usage:
+  input_tokens: 38000
+  output_tokens: 1400
+  cost_usd: 0.11
+  turns: 5
+use_reference: true
+usage_scale:
+  baseline: 1.0
+  candidate: 1.45

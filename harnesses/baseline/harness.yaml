@@ -1,0 +1,7 @@
+name: baseline
+description: The harness as it was before this change - a thin AGENTS.md and nothing else.
+agent: claude-code
+model: claude-sonnet-4-5
+permission_mode: acceptEdits
+mcp_servers: []
+extra_args: []

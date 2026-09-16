@@ -1,0 +1,19 @@
+id: t05-refactor-filtering
+title: Separate filtering from storage
+property: refactor while preserving behaviour
+prompt: |
+  InMemoryCustomerRepository.list_all does two unrelated jobs in one loop: it
+  reads from storage and it decides which customers match the status and search
+  filters. We are about to add a second, database-backed repository that needs the
+  same matching rules, and we do not want to copy that loop.
+
+  Refactor so the matching rules live on their own and can be reused by another
+  repository. Do not change any observable behaviour.
+rubric: rubric.md
+# A refactor task is the one case where "do nothing" passes a behaviour-preservation
+# suite. This extra check makes an empty patch fail, so a no-op cannot score as correct.
+extra_checks:
+  - id: changed_src
+    type: non_empty_diff
+    paths: ["src/"]
+    dimension: correctness

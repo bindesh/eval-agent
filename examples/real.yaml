@@ -1,0 +1,37 @@
+# Real evaluation against Claude Code.
+#
+#   agent-eval evaluate --config examples/real.yaml
+#
+# Requires the `claude` CLI on PATH and logged in. Expect ~30 agent runs.
+# Judging additionally sends your patches to the Anthropic API - see README "Privacy".
+
+evaluation:
+  name: "Add repo conventions to AGENTS.md + a repo-conventions skill"
+  benchmark: ../benchmarks/py-customers
+  baseline: ../harnesses/baseline
+  candidate: ../harnesses/candidate
+  runs: 3
+  order: interleaved
+  seed: 20260915
+  output_dir: ../runs
+
+agent:
+  adapter: claude-code
+  executable: claude
+  model: claude-sonnet-4-5
+  timeout_seconds: 900
+
+judge:
+  enabled: true
+  provider: anthropic
+  model: claude-sonnet-4-5
+  prompt_version: v1
+  self_consistency: 2
+
+decision:
+  min_effect: 0.20
+  cost_tolerance: 0.15
+  duration_tolerance: 0.25
+  reliability_tolerance: 0.15
+  quality_tolerance: 0.15
+  bootstrap_samples: 10000
