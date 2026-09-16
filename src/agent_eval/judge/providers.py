@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 
 from .base import LLMProvider, ProviderResponse
 
@@ -49,6 +51,64 @@ class AnthropicProvider(LLMProvider):
             text=text, model=message.model,
             input_tokens=message.usage.input_tokens,
             output_tokens=message.usage.output_tokens,
+        )
+
+
+class ClaudeCodeProvider(LLMProvider):
+    """Judges by shelling out to the `claude` CLI you are already logged in to.
+
+    The Anthropic API key and a Claude Code subscription are separate credentials, and
+    needing a second one just to score a patch is friction with no methodological payoff.
+    This provider reuses the login that is already driving the agent runs.
+
+    It is also the clearest demonstration of why `LLMProvider` exists: the same Judge,
+    the same versioned prompt, the same JSON contract and the same self-consistency logic,
+    over a completely different transport - a subprocess rather than an HTTP client.
+
+    **One caveat that belongs in the report, not in a footnote:** the judge and the agent
+    under evaluation are then the same model family, reached through the same tool. That
+    is a self-evaluation risk - a model may systematically favour the kind of output it
+    produces. The blinding in `judge/base.py` (no arm label, no harness, no test results)
+    limits it, since the judge cannot tell which arm it is scoring, but it does not remove
+    it: a bias that applies equally to both arms shifts both scores and leaves the paired
+    difference roughly intact, which is the property that makes this tolerable here. Use
+    the API provider with a different model family when that assumption matters.
+    """
+
+    name = "claude-code"
+
+    def __init__(self, executable: str = "claude", timeout_seconds: int = 180) -> None:
+        self.executable = os.path.expanduser(executable)
+        self.timeout_seconds = timeout_seconds
+        if shutil.which(self.executable) is None and not os.path.exists(self.executable):
+            raise RuntimeError(
+                f"judge provider 'claude-code' needs the {self.executable!r} CLI on PATH. "
+                f"Install it, or use --no-judge."
+            )
+
+    def complete(
+        self, system: str, user: str, *, model: str, max_tokens: int, temperature: float
+    ) -> ProviderResponse:
+        # --output-format json wraps the reply; the judge's own JSON is in `result`.
+        argv = [self.executable, "-p", f"{system}\n\n{user}", "--output-format", "json"]
+        if model:
+            argv += ["--model", model]
+        proc = subprocess.run(
+            argv, capture_output=True, text=True, timeout=self.timeout_seconds
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"claude exited {proc.returncode}: {proc.stderr.strip()[:300]}")
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"claude did not return JSON: {exc}") from exc
+        if payload.get("is_error"):
+            raise RuntimeError(f"claude reported an error: {payload.get('result', 'unknown')}")
+        return ProviderResponse(
+            text=str(payload.get("result", "")),
+            model=str(payload.get("model") or model),
+            input_tokens=(payload.get("usage") or {}).get("input_tokens"),
+            output_tokens=(payload.get("usage") or {}).get("output_tokens"),
         )
 
 
@@ -124,6 +184,8 @@ def build_provider(name: str, **kwargs) -> LLMProvider:
         return MockProvider()
     if name == "heuristic":
         return HeuristicProvider()
+    if name == "claude-code":
+        return ClaudeCodeProvider(**kwargs)
     raise ValueError(f"unknown judge provider: {name!r}")
 
 

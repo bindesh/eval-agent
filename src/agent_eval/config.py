@@ -38,7 +38,7 @@ class AgentSettings(BaseModel):
 
 class JudgeSettings(BaseModel):
     enabled: bool = False
-    provider: Literal["anthropic", "heuristic", "mock"] = "anthropic"
+    provider: Literal["anthropic", "claude-code", "heuristic", "mock"] = "anthropic"
     model: str = "claude-sonnet-4-5"
     prompt_version: str = "v1"
     self_consistency: int = 2

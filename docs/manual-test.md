@@ -182,7 +182,20 @@ Check: a non-empty patch, `exit 0`, and `usage actual:` with real token counts. 
 patch with exit 0 usually means the agent hit a permission or trust prompt — set
 `permission_mode` in both `harness.yaml` files, or add `extra_args` there.
 
-**14d — the full run.**
+**14d — credentials, if you want the judged dimension.**
+
+The default `judge.provider` for real runs is `claude-code`, which reuses the `claude`
+login you already have — no API key needed. If you would rather judge with a different
+model family, use `provider: anthropic` and put the key in a gitignored `.env`:
+
+```bash
+cp .env.example .env && $EDITOR .env      # ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Or skip judging entirely with `--no-judge`: you lose one of the five dimensions and the
+disagreement matrix, and the objective evidence is unaffected.
+
+**14e — the full run.**
 
 ```bash
 agent-eval evaluate --config examples/real.yaml

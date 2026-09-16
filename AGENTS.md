@@ -87,6 +87,8 @@ agent-eval report   -c examples/demo.yaml  # rebuild from artifacts, no agent ru
 - Never run an agent against a real repository — always a temp workspace copy.
 - Never commit `runs/` (gitignored): artifacts contain the evaluated code.
 - Never add a secret, token or key to a fixture, a harness, or a test.
+- Credentials belong in a gitignored `.env` (see `env.py`), never in a config file
+  that gets committed. The shell always takes precedence over `.env`.
 - Do not enable the `anthropic` judge on private code without an explicit decision: it
   sends patches and repository context to a third party.
 - Deletion: prefer writing new files beside originals over editing in place.

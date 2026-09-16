@@ -185,3 +185,55 @@ def test_the_heuristic_demo_provider_labels_itself_as_not_a_model():
         "s", f"<patch>{PATCH}</patch>", model="ignored", max_tokens=10, temperature=0
     )
     assert "NOT an LLM" in response.model
+
+
+# --- judging through the CLI you are already logged in to -------------------
+
+def test_claude_code_provider_reports_a_missing_cli_clearly():
+    from agent_eval.judge import ClaudeCodeProvider
+
+    with pytest.raises(RuntimeError, match="needs the .* CLI on PATH"):
+        ClaudeCodeProvider(executable="definitely-not-a-real-binary-xyz")
+
+
+def test_claude_code_provider_unwraps_the_cli_envelope(monkeypatch, tmp_path):
+    """The CLI wraps the reply in its own JSON; the judge's JSON is in `result`."""
+    import subprocess
+
+    from agent_eval.judge import ClaudeCodeProvider
+
+    fake = tmp_path / "claude"
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(0o755)
+    provider = ClaudeCodeProvider(executable=str(fake))
+
+    inner = '{"criteria": {"a": {"score": 4, "evidence": ["src/x.py:1 - adds it"]}}}'
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
+        a[0], 0,
+        stdout=json.dumps({"result": inner, "model": "claude-sonnet-4-5",
+                           "usage": {"input_tokens": 900, "output_tokens": 40}}),
+        stderr="",
+    ))
+    response = provider.complete("sys", "user", model="m", max_tokens=100, temperature=0)
+    assert response.text == inner
+    assert response.input_tokens == 900
+    # and it parses through the normal judge path
+    assert parse_response(response.text).criteria["a"].score == 4
+
+
+def test_claude_code_provider_surfaces_a_cli_error(monkeypatch, tmp_path):
+    """An expired login must raise, not return an empty judgement that scores as a 1."""
+    import subprocess
+
+    from agent_eval.judge import ClaudeCodeProvider
+
+    fake = tmp_path / "claude"
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(0o755)
+    provider = ClaudeCodeProvider(executable=str(fake))
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
+        a[0], 0,
+        stdout=json.dumps({"is_error": True, "result": "OAuth session expired"}), stderr="",
+    ))
+    with pytest.raises(RuntimeError, match="OAuth session expired"):
+        provider.complete("sys", "user", model="m", max_tokens=100, temperature=0)

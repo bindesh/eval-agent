@@ -3,7 +3,7 @@
 #   agent-eval evaluate --config examples/real.yaml
 #
 # Requires the `claude` CLI on PATH and logged in. Expect ~30 agent runs.
-# Judging additionally sends your patches to the Anthropic API - see README "Privacy".
+# Judging sends your patches to a model - see README "Privacy and security".
 
 evaluation:
   name: "Add repo conventions to AGENTS.md + a repo-conventions skill"
@@ -23,7 +23,11 @@ agent:
 
 judge:
   enabled: true
-  provider: anthropic
+  # 'claude-code' judges through the `claude` CLI you are already logged in to, so no
+  # separate ANTHROPIC_API_KEY is needed. Caveat, stated in the report: the judge is then
+  # the same model family as the agent. Switch to provider: anthropic with a different
+  # model when that self-evaluation risk matters. See README "The LLM judge".
+  provider: claude-code
   model: claude-sonnet-4-5
   prompt_version: v1
   self_consistency: 2

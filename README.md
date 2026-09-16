@@ -385,8 +385,38 @@ verdict.
 **Provenance travels with every score** — model id, provider, prompt version, prompt hash.
 Scores from different prompt versions are never pooled.
 
-Providers: `anthropic` (real), `heuristic` (rule-based, for the offline demo — reports
-itself as `heuristic-demo-1 (NOT an LLM)`), `mock` (deterministic, for tests).
+### Providers
+
+| provider | credential | use |
+|---|---|---|
+| `claude-code` | the `claude` CLI login you already have | **default for real runs** — no API key |
+| `anthropic` | `ANTHROPIC_API_KEY` (Console, pay-as-you-go) | when you want a different model family |
+| `heuristic` | none | the offline demo; reports itself as `heuristic-demo-1 (NOT an LLM)` |
+| `mock` | none | deterministic, for the test suite |
+
+The Console API key and a Claude Code subscription are **separate credentials** — a
+Pro/Max plan does not grant API credits. `claude-code` exists so you do not need a second
+one, and it is the clearest demonstration of what the `LLMProvider` abstraction is for:
+the same Judge, prompt version, JSON contract and self-consistency logic over a subprocess
+instead of an HTTP client.
+
+> **Caveat worth stating out loud:** with `claude-code`, the judge and the agent are the
+> same model family reached through the same tool — a self-evaluation risk. The blinding
+> limits it (the judge cannot tell which arm it is scoring), and a bias that applies
+> equally to both arms largely cancels in the *paired* difference, which is what the
+> verdict rests on. Use `anthropic` with a different model when that assumption matters.
+
+### Credentials: use a `.env`
+
+Nothing needs to live in your shell profile:
+
+```bash
+cp .env.example .env     # .env is gitignored
+```
+
+Anything already exported in your shell takes precedence, so a stale `.env` can never
+silently override what you just set. Loading reports only the *names* it applied, never
+the values.
 
 ---
 
@@ -528,9 +558,11 @@ t05 also carries a `non_empty_diff` check, because a refactor task is the one ca
   any environment variable whose name looks like a secret.
 - **The environment snapshot is an allow-list**, not a dump. A full environment dump is the
   most reliable way to leak a credential into an artifact.
-- **Judging is opt-in.** It sends your patch and parts of your repository to a third-party
-  model. `--no-judge` skips it; the demo does not use a network judge at all. Do not enable
-  the `anthropic` judge on a private repository without deciding that is acceptable.
+- **Judging is opt-in.** It sends your patch and parts of your repository to a model.
+  `--no-judge` skips it; the demo does not use a network judge at all. Do not enable a
+  network judge on a private repository without deciding that is acceptable.
+- **Credentials live in a gitignored `.env`**, never in the repo. The shell takes
+  precedence over the file, and only variable *names* are ever echoed.
 - The agent runs in a temp workspace, never against your real repository.
 - `runs/` is gitignored — evaluation artifacts contain your code.
 

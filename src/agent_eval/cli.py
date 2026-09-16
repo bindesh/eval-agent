@@ -19,6 +19,7 @@ from .benchmark import BenchmarkError, load_benchmark
 from .config import Config
 from .decide import Decision
 from .doctor import diagnose
+from .env import load_env
 from .execution import build_plan, execute_run
 from .harness import HarnessError, diff_harnesses, snapshot_harness
 from .judge import Judge, build_provider
@@ -34,6 +35,16 @@ app = typer.Typer(
     help="Evidence for whether a coding-agent harness change actually helped.",
 )
 console = Console()
+
+
+@app.callback()
+def _bootstrap() -> None:
+    """Load a local `.env` before any command runs, so credentials need not live in a
+    shell profile. Anything already exported takes precedence; see `env.py`."""
+    loaded = load_env()
+    if loaded:
+        console.print(f"[dim]loaded {len(loaded)} setting(s) from .env: "
+                      f"{', '.join(sorted(loaded))}[/dim]")
 
 # Three in a row means the environment is broken, not that the agent is bad.
 MAX_CONSECUTIVE_INVALID = 3

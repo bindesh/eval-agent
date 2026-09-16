@@ -9,6 +9,7 @@ from .base import (
 )
 from .providers import (
     AnthropicProvider,
+    ClaudeCodeProvider,
     HeuristicProvider,
     MockProvider,
     build_provider,
@@ -16,6 +17,7 @@ from .providers import (
 
 __all__ = [
     "AnthropicProvider",
+    "ClaudeCodeProvider",
     "CriterionScore",
     "HeuristicProvider",
     "Judge",
