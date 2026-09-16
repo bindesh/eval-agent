@@ -153,7 +153,7 @@ changed", pollutes lint — and **leaks the arm identity to the blind judge**.
 
 ```
 benchmarks/py-customers/
-  benchmark.yaml            shared checks, protected paths, defaults
+  benchmark.yaml            shared checks, protected paths, defaults, workspace excludes
   fixture/                  the starting repository the agent edits
   tasks/t02-fix-lookup-bug/
     task.yaml               id, prompt, timeout, extra checks

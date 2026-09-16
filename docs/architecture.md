@@ -530,6 +530,24 @@ put `.pyc` files in every agent diff, inflated `changed_files`, and shown them t
 judge. Workspace creation now writes those patterns into `.git/info/exclude` before the
 base commit. Covered by `tests/test_workspace.py::test_tool_caches_never_appear_in_the_diff`.
 
+The built-in list (`GIT_EXCLUDES` in `workspace.py`) only covers Python/JS caches. A
+benchmark in another language whose toolchain writes into the tree — Rust `target/`, Go
+binaries, a Gradle `build/` — would hit the same bug. `benchmark.yaml` may declare
+`workspace_excludes:`, a list of gitignore-style patterns applied **on top of**
+`GIT_EXCLUDES`, never instead of it, at every workspace creation site (agent runs and
+`doctor`):
+
+```yaml
+workspace_excludes:
+  - "target/"
+  - "*.o"
+```
+
+Benchmarks that don't set the key behave exactly as before — `workspace_excludes`
+defaults to `[]`. Covered by
+`tests/test_workspace.py::test_benchmark_specific_excludes_never_appear_in_the_diff` and
+`tests/test_benchmark.py::test_workspace_excludes_are_loaded_from_benchmark_yaml`.
+
 ## 15. Limitations (stated before a single number is produced)
 
 1. **n = 5 tasks.** Only large effects are detectable. Most real harness changes will honestly

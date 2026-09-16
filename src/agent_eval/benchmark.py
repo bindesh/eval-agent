@@ -99,4 +99,5 @@ def load_benchmark(benchmark_dir: Path) -> BenchmarkSpec:
         directory=benchmark_dir,
         fixture_dir=fixture_dir,
         tasks=tasks,
+        workspace_excludes=list(data.get("workspace_excludes", [])),
     )

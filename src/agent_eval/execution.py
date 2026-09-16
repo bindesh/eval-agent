@@ -114,7 +114,10 @@ def execute_run(
     """
     run_id = f"{item.task_id}-{item.arm}-rep{item.rep:02d}"
     workspace_root = Path(tempfile.mkdtemp(prefix=f"agent-eval-{run_id}-"))
-    workspace = create_workspace(benchmark.fixture_dir, workspace_root / "repo")
+    workspace = create_workspace(
+        benchmark.fixture_dir, workspace_root / "repo",
+        extra_excludes=benchmark.workspace_excludes,
+    )
 
     # (2) harness overlay, hidden from git
     workspace.overlay(harness.source, exclude_from_git=True)

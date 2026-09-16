@@ -81,12 +81,18 @@ def diagnose_task(
     """Run the golden check for one task."""
     diagnosis = TaskDiagnosis(task_id=task.id, reference_available=task.has_reference)
 
-    pristine = create_workspace(benchmark.fixture_dir, workdir / f"{task.id}-pristine")
+    pristine = create_workspace(
+        benchmark.fixture_dir, workdir / f"{task.id}-pristine",
+        extra_excludes=benchmark.workspace_excludes,
+    )
     pristine.overlay(task.verify_dir, into="verify")
     diagnosis.pristine = run_checks(task.checks, pristine, python=python)
 
     if task.has_reference:
-        solved = create_workspace(benchmark.fixture_dir, workdir / f"{task.id}-reference")
+        solved = create_workspace(
+            benchmark.fixture_dir, workdir / f"{task.id}-reference",
+            extra_excludes=benchmark.workspace_excludes,
+        )
         solved.overlay(task.reference_dir)
         solved.overlay(task.verify_dir, into="verify")
         diagnosis.reference = run_checks(task.checks, solved, python=python)

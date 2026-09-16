@@ -40,6 +40,22 @@ def test_property_key_maps_to_measures(mini_benchmark):
     assert spec.tasks[0].measures == "demo"
 
 
+def test_benchmarks_without_workspace_excludes_get_an_empty_list(mini_benchmark):
+    """Benchmarks that don't set the key must behave exactly as today."""
+    spec = load_benchmark(mini_benchmark())
+    assert spec.workspace_excludes == []
+
+
+def test_workspace_excludes_are_loaded_from_benchmark_yaml(mini_benchmark):
+    root = mini_benchmark()
+    config_path = root / "benchmark.yaml"
+    config = yaml.safe_load(config_path.read_text())
+    config["workspace_excludes"] = ["target/", "*.o"]
+    config_path.write_text(yaml.safe_dump(config))
+    spec = load_benchmark(root)
+    assert spec.workspace_excludes == ["target/", "*.o"]
+
+
 def test_missing_fixture_is_an_error(mini_benchmark, tmp_path):
     root = mini_benchmark()
     (root / "benchmark.yaml").write_text(yaml.safe_dump({"id": "x", "fixture": "nope"}))

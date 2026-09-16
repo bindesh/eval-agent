@@ -133,8 +133,16 @@ class Workspace:
         return copied
 
 
-def create_workspace(fixture_dir: Path, destination: Path) -> Workspace:
-    """Copy ``fixture_dir`` to ``destination`` and make it a git repo with one commit."""
+def create_workspace(
+    fixture_dir: Path, destination: Path, *, extra_excludes: list[str] | None = None
+) -> Workspace:
+    """Copy ``fixture_dir`` to ``destination`` and make it a git repo with one commit.
+
+    ``extra_excludes`` is a benchmark's own gitignore-style patterns (a Rust `target/`,
+    a Go binary, a Gradle `build/`) — applied on top of ``GIT_EXCLUDES``, never instead
+    of them, so a benchmark cannot accidentally re-expose the Python/JS caches the fixed
+    list already guards against.
+    """
     fixture_dir = Path(fixture_dir).resolve()
     destination = Path(destination)
     if destination.exists():
@@ -151,6 +159,9 @@ def create_workspace(fixture_dir: Path, destination: Path) -> Workspace:
     with exclude.open("a") as handle:
         handle.write("\n# agent-eval: tool caches, never part of a patch\n")
         handle.writelines(f"{pattern}\n" for pattern in GIT_EXCLUDES)
+        if extra_excludes:
+            handle.write("\n# agent-eval: benchmark-specific workspace_excludes\n")
+            handle.writelines(f"{pattern}\n" for pattern in extra_excludes)
     run("add", "-A")
     run("commit", "-q", "-m", "agent-eval base", "--allow-empty")
     sha = run("rev-parse", "HEAD").stdout.strip()

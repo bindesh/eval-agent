@@ -103,3 +103,32 @@ def test_refuses_to_overwrite_an_existing_destination(fixture_dir, tmp_path):
     create_workspace(fixture_dir, tmp_path / "ws")
     with pytest.raises(WorkspaceError, match="already exists"):
         create_workspace(fixture_dir, tmp_path / "ws")
+
+
+def test_benchmark_specific_excludes_never_appear_in_the_diff(fixture_dir, tmp_path):
+    """A benchmark in another language (Rust `target/`, Go binaries, Gradle `build/`)
+    can extend the exclude list without touching workspace.py, the same bug __pycache__
+    hit before it had a fixed pattern."""
+    ws = create_workspace(fixture_dir, tmp_path / "ws", extra_excludes=["target/", "*.o"])
+    (ws.path / "target").mkdir()
+    (ws.path / "target" / "app").write_bytes(b"\x00")
+    (ws.path / "obj.o").write_bytes(b"\x00")
+    assert ws.changed_files() == []
+    assert not ws.has_changes()
+
+
+def test_benchmark_specific_excludes_apply_on_top_of_the_builtin_defaults(fixture_dir, tmp_path):
+    """workspace_excludes must add to GIT_EXCLUDES, not replace it."""
+    ws = create_workspace(fixture_dir, tmp_path / "ws", extra_excludes=["target/"])
+    (ws.path / "src" / "__pycache__").mkdir()
+    (ws.path / "src" / "__pycache__" / "app.cpython-312.pyc").write_bytes(b"\x00")
+    (ws.path / "target").mkdir()
+    (ws.path / "target" / "app").write_bytes(b"\x00")
+    assert ws.changed_files() == []
+
+
+def test_without_extra_excludes_behaviour_is_unchanged(fixture_dir, tmp_path):
+    """Benchmarks that don't set workspace_excludes must behave exactly as before."""
+    ws = create_workspace(fixture_dir, tmp_path / "ws", extra_excludes=None)
+    (ws.path / "src" / "app.py").write_text("VALUE = 2\n")
+    assert ws.changed_files() == ["src/app.py"]

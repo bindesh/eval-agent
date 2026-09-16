@@ -93,6 +93,9 @@ class BenchmarkSpec(BaseModel):
     directory: Path
     fixture_dir: Path
     tasks: list[TaskSpec]
+    # Gitignore-style patterns for this benchmark's toolchain (e.g. Rust's `target/`).
+    # Applied on top of the built-in cache excludes in workspace.py, never instead of them.
+    workspace_excludes: list[str] = Field(default_factory=list)
 
     def task(self, task_id: str) -> TaskSpec:
         for task in self.tasks:

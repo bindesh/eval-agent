@@ -47,6 +47,10 @@ The exclude list is a fixed set of Python/JS patterns. A benchmark in another la
 whose toolchain writes artifacts into the tree would hit this again. The general fix is a
 per-benchmark ignore list; it is not built.
 
+**Update:** it is now built. `benchmark.yaml` may declare `workspace_excludes:`, a list of
+gitignore-style patterns applied on top of (never instead of) the built-in list, at every
+workspace creation site — agent runs and `doctor`. See `docs/architecture.md` §14.
+
 **The lesson:** the check that validates the benchmark found a bug in the evaluator. That
 is the argument for building integrity checks before building metrics.
 
