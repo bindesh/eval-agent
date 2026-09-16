@@ -184,3 +184,31 @@ def test_environment_snapshot_is_an_allow_list():
     snapshot = safe_env_snapshot()
     assert set(snapshot) <= {"PATH", "SHELL", "LANG", "TERM", "CI", "VIRTUAL_ENV",
                              "_secret_env_names"}
+
+
+def test_the_harness_model_wins_over_the_evaluation_default(tmp_path, mini_benchmark):
+    """`model` lives in harness.yaml and is part of the harness hash, so a harness that
+    names a model must be run with it. Recording one model while running another would
+    make every provenance claim in the report false."""
+    class Recorder(ScriptedRunner):
+        seen: str | None = None
+
+        def run(self, request):
+            Recorder.seen = request.model
+            return super().run(request)
+
+    benchmark = load_benchmark(mini_benchmark())
+    harness_dir = tmp_path / "harness"
+    write(harness_dir / "AGENTS.md", "# be good\n")
+    write(harness_dir / "harness.yaml", "name: h\nagent: claude-code\nmodel: from-harness\n")
+    store = EvaluationStore(tmp_path / "runs", "eval-model").create()
+    store.write_metadata(config={}, baseline=snapshot_harness(harness_dir),
+                         candidate=snapshot_harness(harness_dir), extra={})
+
+    record = execute_run(
+        benchmark=benchmark, task=benchmark.tasks[0], harness=snapshot_harness(harness_dir),
+        item=build_plan(["t1"], 1)[0], runner=Recorder(SOLVED), store=store,
+        model="from-the-command-line",
+    )
+    assert Recorder.seen == "from-harness"
+    assert record.model == "from-harness"

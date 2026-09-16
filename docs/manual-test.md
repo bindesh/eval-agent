@@ -141,8 +141,52 @@ Judge scores change; the runs, patches and check results do not.
 
 ## 14. Against a real agent (optional — costs money)
 
+**14a — find the `claude` binary.** `evaluate` fails fast if it is not on `PATH`:
+
 ```bash
-which claude && claude --version
+which claude || ls -l ~/.claude/local/claude /opt/homebrew/bin/claude \
+  /usr/local/bin/claude ~/.local/bin/claude 2>/dev/null
+```
+
+If it exists but is not on `PATH`, point the config at it rather than editing your shell:
+
+```yaml
+agent:
+  adapter: claude-code
+  executable: /Users/you/.claude/local/claude
+```
+
+**14b — check it speaks JSON before spending anything.** The adapter parses
+`--output-format json` for usage and cost; if your build does not support it, every run
+records `unavailable` rather than failing, but you want to know that up front:
+
+```bash
+cd /tmp && claude -p "reply with the single word PONG" --output-format json | head -5
+```
+
+**14c — smoke-test with two runs, not thirty.**
+
+```bash
+agent-eval evaluate --config examples/real.yaml --task t01-export-csv --runs 1
+```
+
+Two agent runs, a couple of minutes, a few cents. Then inspect one before committing to the
+full set — this is where you find out whether the agent could actually work in the prepared
+workspace:
+
+```bash
+agent-eval show t01-export-csv-baseline-rep01 -c examples/real.yaml --diff
+```
+
+Check: a non-empty patch, `exit 0`, and `usage actual:` with real token counts. An empty
+patch with exit 0 usually means the agent hit a permission or trust prompt — set
+`permission_mode` in both `harness.yaml` files, or add `extra_args` there.
+
+**14d — the full run.**
+
+```bash
 agent-eval evaluate --config examples/real.yaml
 ```
-~30 real runs. Read `docs/../README.md#privacy-and-security` first if the judge is enabled.
+
+~30 real runs. Read [Privacy and security](../README.md#privacy-and-security) first if the
+judge is enabled — it sends your patches to a third-party model.

@@ -177,3 +177,29 @@ def test_simulated_writes_real_files(tmp_path, real_benchmark_dir):
 def test_simulated_reports_when_no_attempt_is_defined(tmp_path, real_benchmark_dir):
     result = SimulatedRunner(real_benchmark_dir).run(_request(tmp_path, arm="nonexistent-arm"))
     assert result.exit_code == 1 and "no simulated attempt" in result.note
+
+
+# --- the harness owns its own agent configuration ---------------------------
+
+def test_harness_permission_mode_reaches_the_command_line(tmp_path):
+    """Regression test. `permission_mode` is declared in harness.yaml and is part of the
+    harness content hash, so changing it IS a harness change and appears in the report's
+    diff. It must therefore actually be applied - otherwise the tool would report a
+    harness as changed and then evaluate it as though it had not."""
+    request = _request(tmp_path, config={"permission_mode": "plan"})
+    argv = ClaudeCodeRunner(permission_mode="acceptEdits").build_argv(request)
+    assert argv[argv.index("--permission-mode") + 1] == "plan"
+
+
+def test_harness_extra_args_reach_the_command_line(tmp_path):
+    request = _request(tmp_path, config={"extra_args": ["--verbose", "--foo"]})
+    argv = ClaudeCodeRunner().build_argv(request)
+    assert argv[-2:] == ["--verbose", "--foo"]
+
+
+def test_constructor_values_are_only_a_fallback(tmp_path):
+    argv = ClaudeCodeRunner(
+        permission_mode="acceptEdits", extra_args=["--fallback"]
+    ).build_argv(_request(tmp_path, config={}))
+    assert argv[argv.index("--permission-mode") + 1] == "acceptEdits"
+    assert argv[-1] == "--fallback"

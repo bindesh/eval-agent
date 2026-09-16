@@ -52,14 +52,23 @@ class ClaudeCodeRunner(AgentRunner):
         return shutil.which(self.executable) is not None
 
     def build_argv(self, request: AgentRunRequest) -> list[str]:
+        """Build the command line for one run.
+
+        `permission_mode` and `extra_args` come from the arm's `harness.yaml` when it
+        declares them, because they are part of the harness under evaluation - the
+        constructor values are only the fallback for a harness that says nothing.
+        """
+        permission_mode = request.config.get("permission_mode", self.permission_mode)
+        extra_args = request.config.get("extra_args") or self.extra_args
+
         argv = [self.executable, "-p", request.prompt]
         if self.output_format:
             argv += ["--output-format", self.output_format]
         if request.model:
             argv += ["--model", request.model]
-        if self.permission_mode:
-            argv += ["--permission-mode", self.permission_mode]
-        return argv + self.extra_args
+        if permission_mode:
+            argv += ["--permission-mode", str(permission_mode)]
+        return argv + [str(arg) for arg in extra_args]
 
     @staticmethod
     def parse_payload(stdout: str) -> tuple[dict | None, AgentUsage, str | None, str | None]:

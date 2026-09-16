@@ -124,11 +124,20 @@ def execute_run(
             stray.unlink()  # agent-eval's own config is not part of the agent's repo
     overlaid = overlay_files(harness)
 
+    # The harness owns its own agent configuration. `harness.yaml` declares the model,
+    # the permission mode and any extra CLI flags, and all three are part of the harness
+    # content hash - so a change to any of them IS a harness change and shows in the diff.
+    # They must therefore actually reach the adapter: a harness whose permission mode
+    # changed would otherwise be reported as changed and then run as though it had not.
+    # The evaluation-level `--model` is a default for harnesses that do not name one.
+    effective_model = harness.model or model
+
     started = datetime.now(UTC)
     request = AgentRunRequest(
-        run_id=run_id, workspace=workspace.path, prompt=task.prompt, model=model,
+        run_id=run_id, workspace=workspace.path, prompt=task.prompt, model=effective_model,
         timeout_seconds=timeout_seconds or task.timeout_seconds,
         task_id=task.id, harness_id=harness.harness_id, arm=item.arm, rep=item.rep, seed=seed,
+        config=harness.config,
     )
     result = runner.run(request)
     ended = datetime.now(UTC)
@@ -148,7 +157,7 @@ def execute_run(
         run_id=run_id, evaluation_id=store.evaluation_id, task_id=task.id, arm=item.arm,
         rep=item.rep, order_index=item.order_index,
         harness_id=harness.harness_id, harness_short_id=harness.short_id,
-        model=model, model_reported=result.model_reported,
+        model=effective_model, model_reported=result.model_reported,
         agent_adapter=result.adapter, agent_adapter_version=result.adapter_version,
         tool_version=__version__, simulated=result.simulated,
         prompt_sha256=hashlib.sha256(task.prompt.encode()).hexdigest(),
