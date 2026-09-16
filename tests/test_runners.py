@@ -203,3 +203,12 @@ def test_constructor_values_are_only_a_fallback(tmp_path):
     ).build_argv(_request(tmp_path, config={}))
     assert argv[argv.index("--permission-mode") + 1] == "acceptEdits"
     assert argv[-1] == "--fallback"
+
+
+def test_a_tilde_in_the_executable_path_is_expanded():
+    """The native installer puts the launcher at ~/.local/bin/claude, so configs name it
+    that way. subprocess does not expand `~`, and the resulting "not found" error points
+    at the wrong problem."""
+    runner = ClaudeCodeRunner(executable="~/.local/bin/claude")
+    assert not runner.executable.startswith("~")
+    assert runner.executable.endswith("/.local/bin/claude")

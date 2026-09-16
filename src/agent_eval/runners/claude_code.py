@@ -32,7 +32,10 @@ class ClaudeCodeRunner(AgentRunner):
         permission_mode: str | None = "acceptEdits",
         extra_args: list[str] | None = None,
     ) -> None:
-        self.executable = executable
+        # The native installer puts the launcher at ~/.local/bin/claude, so a config
+        # naming it that way is the common case. subprocess does not expand `~`, and the
+        # resulting failure ("executable not found") points at the wrong problem.
+        self.executable = os.path.expanduser(executable)
         self.output_format = output_format
         self.permission_mode = permission_mode
         self.extra_args = list(extra_args or [])
